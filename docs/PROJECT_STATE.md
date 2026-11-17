@@ -133,3 +133,11 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
 - CI run #2 on b7ee33d green (checks + e2e).
 - Smoke checks from a dev machine: `/api/health` 200, `/` 200, deep link `/play` 200, guest create 201 + `/api/auth/me` 200 (D1 write/read works), foreign Origin rejected with 403.
 - Not yet done: §7 four-device smoke test (seats, private hands, full board, refresh mid-play), repository variable `PRODUCTION_URL`.
+
+## UI polish batch 1 (2026-11-18)
+
+- Prompt (Google Fonts) is the site-wide font (`index.html`, `--font-sans`).
+- Dummy hand orientation follows table position: left/right = one vertical column per suit; top = one horizontal row. Verified in the browser with dummy at top (human declarer S) and at right (bot declarer E via `e2e/bots.ts --open`).
+- Game status bar: labelled tiles (Board, Dealer, Vul with red highlight when vulnerable, Contract), pulsing "your turn" pill, team trick pills.
+- Dev note: setting the real `database_id` moved local D1 state to a new file; run `npx wrangler d1 migrations apply DB --local -c apps/web/wrangler.jsonc` once after pulling.
+- typecheck/lint clean; unit tests 34 + 90 + 5 pass.

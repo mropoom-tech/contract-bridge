@@ -32,10 +32,23 @@ const SeatLabel = ({ pub, seat, self }: { pub: PublicViewState; seat: Seat; self
 };
 
 /** Dummy shown face-up grouped by suit; interactive for declarer on dummy's turn. */
-const DummyHand = ({ cards, playable, selected, onSelect }: { cards: readonly Card[]; playable: readonly Card[]; selected: Card | null; onSelect?: (c: Card) => void }) => (
-  <div className="flex flex-wrap justify-center gap-2" aria-label={t.dummy}>
+const DummyHand = ({
+  cards,
+  playable,
+  selected,
+  onSelect,
+  vertical,
+}: {
+  cards: readonly Card[];
+  playable: readonly Card[];
+  selected: Card | null;
+  onSelect?: (c: Card) => void;
+  /** Left/right seats: one column per suit, cards cascading downward. Top: one row per suit. */
+  vertical: boolean;
+}) => (
+  <div className={vertical ? 'flex items-start gap-1' : 'flex flex-wrap justify-center gap-2'} aria-label={t.dummy}>
     {groupBySuit(cards).map((g) => (
-      <div key={g.suit} className="flex -space-x-4">
+      <div key={g.suit} className={vertical ? 'flex flex-col -space-y-9' : 'flex -space-x-4'}>
         {g.cards.map((c) => (
           <CardFace
             key={c}
@@ -60,6 +73,13 @@ const HiddenHand = ({ count, vertical }: { count: number; vertical: boolean }) =
       ))}
     </div>
     <span className="text-xs text-ivory-200/80">{t.cardsLeft(count)}</span>
+  </div>
+);
+
+const StatTile = ({ label, value, tone }: { label: string; value: string; tone?: 'gold' | 'danger' }) => (
+  <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+    <div className="text-xs text-ivory-200/70">{label}</div>
+    <div className={`truncate font-semibold ${tone === 'gold' ? 'text-gold-300' : tone === 'danger' ? 'text-red-300' : ''}`}>{value}</div>
   </div>
 );
 
@@ -159,6 +179,7 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
           playable={ctrlForDummy ? (play?.cards ?? []) : []}
           selected={ctrlForDummy ? selected : null}
           onSelect={ctrlForDummy ? playFrom(seat) : undefined}
+          vertical={vertical}
         />
       );
     } else {
@@ -176,25 +197,40 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0 space-y-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-black/30 px-3 py-2 text-sm" role="status">
-          <span>
-            {t.board} <strong>{pub.boardNumber}</strong>
-          </span>
-          <span>
-            {t.dealer} <strong>{pub.dealer}</strong>
-          </span>
-          <span>
-            {t.vulnerable}: <strong>{pub.vulnerability ? t.vulName[pub.vulnerability] : '—'}</strong>
-          </span>
-          {pub.contract && (
-            <span>
-              {t.contract} <strong className="text-gold-300">{contractText(pub.contract)}</strong> ({pub.contract.declarer})
+        <div className="space-y-2" role="status">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatTile label={t.board} value={String(pub.boardNumber ?? '—')} />
+            <StatTile label={t.dealer} value={pub.dealer ? `${t.seatName[pub.dealer]} (${pub.dealer})` : '—'} />
+            <StatTile
+              label={t.vulnerable}
+              value={pub.vulnerability ? t.vulName[pub.vulnerability] : '—'}
+              tone={pub.vulnerability && pub.vulnerability !== 'NONE' ? 'danger' : undefined}
+            />
+            <StatTile
+              label={t.contract}
+              value={pub.contract ? `${contractText(pub.contract)} · ${pub.contract.declarer}` : '—'}
+              tone={pub.contract ? 'gold' : undefined}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {turnText && (
+              <span
+                className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                  allowed.calls.length > 0 || play ? 'animate-pulse bg-gold-400 text-charcoal-950' : 'bg-black/35 text-ivory-100'
+                }`}
+              >
+                {turnText}
+              </span>
+            )}
+            <span className="ml-auto flex gap-2 text-sm">
+              <span className="rounded-full bg-ns-600/35 px-3 py-1">
+                NS <strong>{nsTricks}</strong> {t.tricks}
+              </span>
+              <span className="rounded-full bg-ew-600/35 px-3 py-1">
+                EW <strong>{ewTricks}</strong> {t.tricks}
+              </span>
             </span>
-          )}
-          {turnText && <span className={allowed.calls.length > 0 || play ? 'font-bold text-gold-300' : ''}>{turnText}</span>}
-          <span className="ml-auto">
-            <span className="text-ns-400">NS {nsTricks}</span> · <span className="text-ew-400">EW {ewTricks}</span> {t.tricks}
-          </span>
+          </div>
         </div>
 
         <div className="felt rounded-3xl border border-black/40 p-3 shadow-inner sm:p-5">
