@@ -20,6 +20,7 @@
 		{
 			"binding": "DB",
 			"database_name": "contract-bridge-db",
+			"database_id": "2e9ba037-cab3-4607-a39d-acb5daac273e",
 			"migrations_dir": "../../migrations"
 		}
 	],
