@@ -14,9 +14,16 @@ const setup = async (start: boolean) => {
   const code = (await api('/rooms', { method: 'POST', body: { targetBoards: 1 }, cookie: guests.N.cookie })).json.code as string;
   for (const s of ['E', 'S', 'W'] as const) await api(`/rooms/${code}/join`, { method: 'POST', cookie: guests[s].cookie });
   for (const s of SEATS) clients[s] = await RoomClient.connect(code, { Cookie: guests[s].cookie, Origin: ORIGIN });
+  /** Seats we disconnected on purpose (their client-side close event may arrive late over the internet). */
+  const gone = new Set<Seat>();
+  const live = () => SEATS.filter((s) => !gone.has(s) && clients[s].closed === null);
   const sync = () => {
-    const v = Math.max(...SEATS.filter((s) => clients[s].closed === null).map((s) => clients[s].version));
-    return Promise.all(SEATS.filter((s) => clients[s].closed === null).map((s) => clients[s].waitFor(() => clients[s].version >= v)));
+    const v = Math.max(...live().map((s) => clients[s].version));
+    return Promise.all(live().map((s) => clients[s].waitFor(() => clients[s].version >= v)));
+  };
+  const drop = (seat: Seat) => {
+    gone.add(seat);
+    clients[seat].close();
   };
   const act = async (seat: Seat, type: Parameters<RoomClient['command']>[0], payload: unknown) => {
     await sync();
@@ -28,13 +35,13 @@ const setup = async (start: boolean) => {
     await act(s, 'room:ready', { ready: true });
   }
   if (start) await act('N', 'room:start', {});
-  return { guests, clients, code, act, sync };
+  return { guests, clients, code, act, sync, drop };
 };
 
 describe('disconnected players: bot takeover and kick votes', () => {
   it('BOT vote: W drops, N+E vote, the bot plays W and readies for the next step', async () => {
-    const { clients, act, guests, code } = await setup(true);
-    clients.W.close();
+    const { clients, act, guests, code, drop } = await setup(true);
+    drop('W');
     await clients.N.waitFor(() => clients.N.snapshot?.public.seats.W?.online === false);
     expect(clients.N.snapshot?.allowedActions.startVote).toContainEqual({ seat: 'W', kinds: ['BOT', 'KICK'] });
     await act('N', 'vote:start', { seat: 'W', kind: 'BOT' });
@@ -65,7 +72,7 @@ describe('disconnected players: bot takeover and kick votes', () => {
     await clients.S.waitFor(() => clients.S.snapshot?.public.vote !== null);
     const voteId = clients.S.snapshot?.public.vote?.id ?? '';
     await act('S', 'vote:cast', { voteId, yes: true });
-    await clients.E.waitFor(() => clients.E.closed !== null, 5000);
+    await clients.E.waitFor(() => clients.E.closed !== null, 10_000);
     expect(clients.E.closed?.code).toBe(4003);
     await clients.N.waitFor(() => clients.N.snapshot?.public.seats.E === null);
     const rejoin = await api(`/rooms/${code}/join`, { method: 'POST', cookie: guests.E.cookie });

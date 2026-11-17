@@ -32,6 +32,7 @@ const STATE_KEY = 'room:state';
 const SYNC_ATTEMPT_KEY = 'room:sync-attempt';
 const RETRY_AT_KEY = 'room:outbox-retry-at';
 const EMPTY_SINCE_KEY = 'room:empty-since';
+const BOT_DUE_KEY = 'room:bot-due';
 const ARCHIVE_RETRY_MS = 60_000;
 /** Pause between bot moves so humans can follow them. */
 const BOT_DELAY_MS = 700;
@@ -50,7 +51,6 @@ export class BridgeRoom extends DurableObject<Env> {
   /** In-memory frame counters; reset on hibernation, which is acceptable. */
   private readonly rate = new WeakMap<WebSocket, { start: number; count: number }>();
   private flushing: Promise<void> | null = null;
-  private botsRunning = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -119,7 +119,10 @@ export class BridgeRoom extends DurableObject<Env> {
   /** One alarm serves both the outbox retry and the empty-room deadline. */
   private async scheduleAlarm(): Promise<void> {
     if (!this.room) return;
-    const at = nextAlarmAt(await this.lifecycleInput());
+    const lifecycleAt = nextAlarmAt(await this.lifecycleInput());
+    const botDue = (await this.ctx.storage.get<number>(BOT_DUE_KEY)) ?? null;
+    const times = [lifecycleAt, botDue].filter((x): x is number => x !== null);
+    const at = times.length === 0 ? null : Math.min(...times);
     if (at === null) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(at);
   }
@@ -132,6 +135,11 @@ export class BridgeRoom extends DurableObject<Env> {
 
   override async alarm(): Promise<void> {
     if (!this.room) return;
+    const botDue = await this.ctx.storage.get<number>(BOT_DUE_KEY);
+    if (botDue !== undefined && botDue <= Date.now()) {
+      await this.ctx.storage.delete(BOT_DUE_KEY);
+      await this.botStep();
+    }
     if (this.room.pendingWrites.length > 0) await this.flushOutbox();
     if (shouldCloseRoom(await this.lifecycleInput())) await this.closeRoom();
     else await this.scheduleAlarm();
@@ -341,26 +349,31 @@ export class BridgeRoom extends DurableObject<Env> {
     }
   }
 
-  /** Play bot moves one at a time (with a short pause) until a human must act. */
+  /**
+   * If a bot-played seat must act, schedule its move via the DO alarm (durable:
+   * survives hibernation/eviction, unlike in-memory timers).
+   */
   private async driveBots(): Promise<void> {
-    if (this.botsRunning) return;
-    this.botsRunning = true;
+    const room = this.room;
+    if (!room || applyBotStep(room, this.deps()) === null) return;
+    if ((await this.ctx.storage.get<number>(BOT_DUE_KEY)) !== undefined) return;
+    await this.ctx.storage.put(BOT_DUE_KEY, Date.now() + BOT_DELAY_MS);
+    await this.scheduleAlarm();
+  }
+
+  private async botStep(): Promise<void> {
+    const room = this.room;
+    if (!room) return;
     try {
-      for (let i = 0; i < 200; i++) {
-        await new Promise((r) => setTimeout(r, BOT_DELAY_MS));
-        const room = this.room;
-        if (!room) return;
-        const next = applyBotStep(room, this.deps());
-        if (!next) return;
-        await this.save(next);
-        this.broadcastSnapshots();
-        if (next.pendingWrites.length > room.pendingWrites.length) void this.flushOutbox();
-      }
+      const next = applyBotStep(room, this.deps());
+      if (!next) return;
+      await this.save(next);
+      this.broadcastSnapshots();
+      if (next.pendingWrites.length > room.pendingWrites.length) void this.flushOutbox();
     } catch (e) {
-      console.error('bot_step_failed', { roomId: this.room?.roomId, name: (e as Error).name });
-    } finally {
-      this.botsRunning = false;
+      console.error('bot_step_failed', { roomId: room.roomId, name: (e as Error).name });
     }
+    await this.driveBots();
   }
 
   // ---------- helpers ----------

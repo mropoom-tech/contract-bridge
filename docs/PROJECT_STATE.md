@@ -192,3 +192,16 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
   - Full e2e 10/10 twice. One earlier full run failed (including an existing multiplayer test) while the dev server was reloading after an edit; it was not reproduced in 2 reruns.
   - Browser: 3 players dropped, voted bots in, bots passed and readied (screenshot).
 - Known limit: the bot is basic (always passes in the auction).
+
+## Production deploy 2 (2026-11-18)
+
+- Bot moves are now paced by the Durable Object alarm (`room:bot-due`), not an in-memory timer, so they survive hibernation/eviction in production. The alarm is shared with the outbox retry and empty-room deadline.
+- e2e client: `CF-Connecting-IP` is spoofed only against localhost (Cloudflare's edge rejects client-sent CF-* headers). The vote test tracks seats it disconnects itself, because a client-side close event can arrive late over the internet.
+- Deployed with `wrangler deploy` from this machine (owner's OAuth login, owner-authorized). Remote D1: "No migrations to apply". Version `8fba08bf-8b21-4797-9902-f92737fbcb97` at https://contract-bridge-online.mropoomkung.workers.dev.
+- Production smoke:
+  - `/api/health` 200; `/`, `/learn`, `/learn/scoring`, `/lobby` 200; Prompt font loaded.
+  - `e2e/votes.e2e.test.ts` against production 2/2: bot vote, the bot passes and readies, player reclaims; kick vote, 4003 close, rejoin 403.
+  - Step probe confirmed the server sees the disconnect within 1 s.
+- Production per-IP guest limit (10/min) observed working (429 during repeated test runs).
+- Local: e2e 10/10, typecheck/lint clean.
+- GitHub push of these commits is pending: it needs the owner's GitHub sign-in on this machine.

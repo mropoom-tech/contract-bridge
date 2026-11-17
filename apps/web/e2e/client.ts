@@ -4,6 +4,7 @@ import type { ClientCommandType, SeatSpecificSnapshot, ServerMessage } from '@br
 export const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 export const ORIGIN = new URL(BASE).origin;
 const WS_BASE = BASE.replace(/^http/, 'ws');
+const IS_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(ORIGIN);
 
 export interface Guest {
   readonly id: string;
@@ -15,7 +16,9 @@ export interface Guest {
 const fakeIp = () => `198.51.100.${Math.floor(Math.random() * 254) + 1}`;
 
 export const api = async (path: string, init: { method?: string; body?: unknown; cookie?: string; origin?: string | null } = {}) => {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'CF-Connecting-IP': fakeIp() };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // Only locally: Cloudflare's edge rejects client-supplied CF-* headers.
+  if (IS_LOCAL) headers['CF-Connecting-IP'] = fakeIp();
   if (init.cookie) headers.Cookie = init.cookie;
   if (init.origin !== null) headers.Origin = init.origin ?? ORIGIN;
   const res = await fetch(`${BASE}/api${path}`, {
