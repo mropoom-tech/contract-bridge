@@ -6,7 +6,9 @@ import {
   boardCall,
   boardPlay,
   createBoard,
+  projectBoardForSeat,
   seatToPlay,
+  trumpOf,
   SEATS,
   type BoardState,
   type EngineErrorCode,
@@ -19,9 +21,11 @@ import {
   type FinishedBoard,
   type MutatingCommand,
   type RoomPhase,
+  type VoteKind,
 } from '@bridge/shared';
+import { chooseCard } from './bot';
 
-export const ROOM_SCHEMA_VERSION = 2;
+export const ROOM_SCHEMA_VERSION = 3;
 export const MAX_MEMBERS = 4;
 export const MAX_PROCESSED_REQUESTS = 256;
 
@@ -65,6 +69,24 @@ export interface RoomState {
   readonly processedRequests: readonly ProcessedRequest[];
   /** Outbox of D1 summary writes, flushed by the DO and retried until confirmed. */
   readonly pendingWrites: readonly PendingWrite[];
+  /** Seats played by the server bot. The seat keeps its original userId. */
+  readonly botSeats: Readonly<Record<Seat, boolean>>;
+  /** Users removed by vote; they may not rejoin. Kept with names for display. */
+  readonly kicked: readonly Member[];
+  readonly vote: SeatVote | null;
+}
+
+export interface SeatVote {
+  readonly id: string;
+  readonly kind: VoteKind;
+  readonly seat: Seat;
+  readonly targetUserId: string;
+  readonly startedBy: string;
+  /** Users allowed to vote (fixed when the vote starts). */
+  readonly eligible: readonly string[];
+  readonly yes: readonly string[];
+  readonly no: readonly string[];
+  readonly needed: number;
 }
 
 /** Idempotent D1 summary writes, keyed by a stable id. Never contain hidden hands. */
@@ -89,6 +111,10 @@ export interface RoomInit {
   readonly createdAt: string;
 }
 
+function allFalse(): Record<Seat, boolean> {
+  return { N: false, E: false, S: false, W: false };
+}
+
 export const createRoomState = (init: RoomInit): RoomState => ({
   schemaVersion: ROOM_SCHEMA_VERSION,
   roomId: init.roomId,
@@ -106,6 +132,9 @@ export const createRoomState = (init: RoomInit): RoomState => ({
   completedBoards: [],
   processedRequests: [],
   pendingWrites: [],
+  botSeats: allFalse(),
+  kicked: [],
+  vote: null,
 });
 
 /** Remove confirmed writes from the outbox (by id). */
@@ -118,7 +147,9 @@ export const acknowledgeWrites = (state: RoomState, ids: ReadonlySet<string>): R
 export const migrateRoomState = (raw: unknown): RoomState => {
   const s = raw as Partial<RoomState> & { schemaVersion?: number };
   if (s.schemaVersion === ROOM_SCHEMA_VERSION) return s as RoomState;
-  if (s.schemaVersion === 1) return { ...(s as RoomState), schemaVersion: ROOM_SCHEMA_VERSION, pendingWrites: [] };
+  const v3 = { botSeats: allFalse(), kicked: [], vote: null };
+  if (s.schemaVersion === 2) return { ...(s as RoomState), ...v3, schemaVersion: ROOM_SCHEMA_VERSION };
+  if (s.schemaVersion === 1) return { ...(s as RoomState), ...v3, schemaVersion: ROOM_SCHEMA_VERSION, pendingWrites: [] };
   throw new Error(`Unsupported room schemaVersion ${String(s.schemaVersion)}`);
 };
 
@@ -140,6 +171,9 @@ export const joinRoom = (
   member: Member,
 ): { ok: true; state: RoomState; changed: boolean } | { ok: false; error: RoomError } => {
   if (isMember(state, member.userId)) return { ok: true, state, changed: false };
+  if (state.kicked.some((k) => k.userId === member.userId)) {
+    return { ok: false, error: { code: 'FORBIDDEN', message: 'You were removed from this room.' } };
+  }
   if (state.phase !== 'WAITING') {
     return { ok: false, error: { code: 'ROOM_CLOSED', message: 'The match has already started.' } };
   }
@@ -167,7 +201,6 @@ const ENGINE_ERROR_MAP: Readonly<Record<EngineErrorCode, ErrorCode>> = {
   BOARD_COMPLETE: 'INVALID_PHASE',
 };
 
-const allFalse = (): Record<Seat, boolean> => ({ N: false, E: false, S: false, W: false });
 
 const afterBoardChange = (state: RoomState, board: BoardState, deps: RoomDeps): RoomState => {
   if (board.phase !== 'COMPLETED' || board.result === null) {
@@ -203,7 +236,59 @@ export interface RoomDeps {
   readonly newId: () => string;
   /** ISO timestamp source (injected for deterministic tests). */
   readonly now: () => string;
+  /** Users with an open connection right now (votes need this). Defaults to nobody. */
+  readonly online?: ReadonlySet<string>;
 }
+
+// ---------- votes: replace an absent player with a bot, or remove a player ----------
+
+const inMatch = (p: RoomPhase) => p === 'BIDDING' || p === 'PLAYING' || p === 'BOARD_RESULT';
+
+/** Seated humans (not bot-controlled), excluding `except`. */
+const seatedHumans = (state: RoomState, except: string | null): string[] =>
+  SEATS.flatMap((s) => {
+    const a = state.seats[s];
+    return a && !state.botSeats[s] && a.userId !== except ? [a.userId] : [];
+  });
+
+/** Which vote kinds `voter` may start against `seat`; empty when none. */
+export const voteKindsAgainst = (state: RoomState, voter: string, seat: Seat, online: ReadonlySet<string>): VoteKind[] => {
+  const target = state.seats[seat];
+  if (state.vote || !target || target.userId === voter || seatOf(state, voter) === null) return [];
+  if (state.phase === 'MATCH_COMPLETED') return [];
+  const kinds: VoteKind[] = [];
+  if (inMatch(state.phase) && !state.botSeats[seat] && !online.has(target.userId)) kinds.push('BOT');
+  if (isMember(state, target.userId)) kinds.push('KICK');
+  return kinds;
+};
+
+const applyVote = (state: RoomState, v: SeatVote): RoomState => {
+  const base = { ...state, vote: null };
+  if (v.kind === 'BOT') return { ...base, botSeats: { ...state.botSeats, [v.seat]: true } };
+  const member = state.members.find((m) => m.userId === v.targetUserId);
+  const members = state.members.filter((m) => m.userId !== v.targetUserId);
+  const kicked = member ? [...state.kicked, member] : state.kicked;
+  const hostUserId =
+    state.hostUserId === v.targetUserId
+      ? (seatedHumans(state, v.targetUserId)[0] ?? members[0]?.userId ?? state.hostUserId)
+      : state.hostUserId;
+  if (state.phase === 'WAITING') {
+    return { ...base, members, kicked, hostUserId, seats: { ...state.seats, [v.seat]: null } };
+  }
+  // In a match the seat cannot be empty: the bot finishes it.
+  return { ...base, members, kicked, hostUserId, botSeats: { ...state.botSeats, [v.seat]: true } };
+};
+
+const settleVote = (state: RoomState, v: SeatVote): RoomState => {
+  if (v.yes.length >= v.needed) return applyVote(state, v);
+  if (v.no.length > v.eligible.length - v.needed) return { ...state, vote: null };
+  return { ...state, vote: v };
+};
+
+const actingSeat = (state: RoomState, userId: string): Seat | null => {
+  const seat = seatOf(state, userId);
+  return seat && state.botSeats[seat] ? null : seat;
+};
 
 const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps: RoomDeps): Step => {
   const seat = seatOf(state, userId);
@@ -252,9 +337,41 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
         state.hostUserId === userId ? (members[0]?.userId ?? state.hostUserId) : state.hostUserId;
       return step({ ...state, members, seats, hostUserId });
     }
+    case 'vote:start': {
+      const online = deps.online ?? new Set<string>();
+      const kinds = voteKindsAgainst(state, userId, cmd.payload.seat, online);
+      if (!kinds.includes(cmd.payload.kind)) return err('FORBIDDEN', 'That vote is not allowed now.');
+      const targetUserId = state.seats[cmd.payload.seat]?.userId ?? '';
+      const eligible = [userId, ...seatedHumans(state, targetUserId).filter((u) => u !== userId && online.has(u))];
+      const v: SeatVote = {
+        id: deps.newId(),
+        kind: cmd.payload.kind,
+        seat: cmd.payload.seat,
+        targetUserId,
+        startedBy: userId,
+        eligible,
+        yes: [userId],
+        no: [],
+        needed: Math.floor(eligible.length / 2) + 1,
+      };
+      return step(settleVote(state, v));
+    }
+    case 'vote:cast': {
+      const v = state.vote;
+      if (!v || v.id !== cmd.payload.voteId) return err('INVALID_PHASE', 'That vote is no longer open.');
+      if (!v.eligible.includes(userId)) return err('FORBIDDEN', 'You cannot vote on this.');
+      if (v.yes.includes(userId) || v.no.includes(userId)) return err('FORBIDDEN', 'You already voted.');
+      const next = cmd.payload.yes ? { ...v, yes: [...v.yes, userId] } : { ...v, no: [...v.no, userId] };
+      return step(settleVote(state, next));
+    }
+    case 'seat:reclaim': {
+      if (!seat || !state.botSeats[seat]) return err('INVALID_PHASE', 'Your seat is not bot-controlled.');
+      return step({ ...state, botSeats: { ...state.botSeats, [seat]: false } });
+    }
     case 'auction:call': {
       if (state.phase !== 'BIDDING' || !state.board) return err('INVALID_PHASE', 'The auction is not in progress.');
       if (!seat) return err('FORBIDDEN', 'You are not seated.');
+      if (!actingSeat(state, userId)) return err('FORBIDDEN', 'A bot is playing your seat; take it back first.');
       const r = boardCall(state.board, seat, callFromPayload(cmd.payload));
       if (!r.ok) return err(ENGINE_ERROR_MAP[r.error.code], r.error.message);
       return step(afterBoardChange(state, r.value, deps));
@@ -262,6 +379,7 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
     case 'card:play': {
       if (state.phase !== 'PLAYING' || !state.board?.play) return err('INVALID_PHASE', 'Card play is not in progress.');
       if (!seat) return err('FORBIDDEN', 'You are not seated.');
+      if (!actingSeat(state, userId)) return err('FORBIDDEN', 'A bot is playing your seat; take it back first.');
       if (seatToPlay(state.board.play) !== cmd.payload.fromSeat) {
         return err('NOT_YOUR_TURN', `It is not ${cmd.payload.fromSeat}'s turn to play.`);
       }
@@ -274,6 +392,7 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
         return err('INVALID_PHASE', 'No finished board to continue from.');
       }
       if (!seat) return err('FORBIDDEN', 'You are not seated.');
+      if (!actingSeat(state, userId)) return err('FORBIDDEN', 'A bot is playing your seat; take it back first.');
       const nextBoardReady = { ...state.nextBoardReady, [seat]: cmd.payload.ready };
       if (!SEATS.every((s) => nextBoardReady[s])) return step({ ...state, nextBoardReady });
       if (state.completedBoards.length >= state.targetBoards) {
@@ -344,4 +463,38 @@ export const handleCommand = (
   const version = state.version + 1;
   const response: CommandResponse = { status: 'accepted', stateVersion: version };
   return { state: remember({ ...result.state, version }, key, response), persist: true, broadcast: true, response };
+};
+
+// ---------- server bot ----------
+
+/**
+ * One bot move if a bot-controlled seat must act, else null. Uses the same
+ * transition as human commands, acting as the seat's user, so every rule and
+ * D1 outbox write applies unchanged.
+ */
+export const applyBotStep = (state: RoomState, deps: RoomDeps): RoomState | null => {
+  const board = state.board;
+  if (!board || !SEATS.some((s) => state.botSeats[s])) return null;
+  const actAs = (seat: Seat, cmd: MutatingCommand): RoomState | null => {
+    const userId = state.seats[seat]?.userId;
+    if (!userId) return null;
+    const r = transition({ ...state, botSeats: { ...state.botSeats, [seat]: false } }, userId, cmd, deps);
+    if (!r.ok) return null;
+    return { ...r.state, botSeats: state.botSeats, version: state.version + 1 };
+  };
+  const ids = { protocolVersion: 1 as const, requestId: deps.newId(), expectedVersion: state.version };
+  if (state.phase === 'BOARD_RESULT' && state.nextBoardReady) {
+    const seat = SEATS.find((s) => state.botSeats[s] && !state.nextBoardReady?.[s]);
+    return seat ? actAs(seat, { ...ids, type: 'board:readyNext', payload: { ready: true } }) : null;
+  }
+  const view = projectBoardForSeat(board, null);
+  const controller = view.controller;
+  if (!controller || !view.toAct || !state.botSeats[controller]) return null;
+  if (state.phase === 'BIDDING') return actAs(controller, { ...ids, type: 'auction:call', payload: { kind: 'PASS' } });
+  if (state.phase === 'PLAYING' && view.contract) {
+    const own = projectBoardForSeat(board, controller);
+    const card = chooseCard(view.toAct, own.legalCards, own.currentTrick?.cards ?? [], trumpOf(view.contract.strain));
+    return actAs(controller, { ...ids, type: 'card:play', payload: { fromSeat: view.toAct, card } });
+  }
+  return null;
 };

@@ -107,6 +107,22 @@ export const th = {
   undertricks: 'ค่าปรับ Undertrick',
   total: 'รวม',
   learnNav: 'บทสอนเล่น',
+  vote: {
+    panelTitle: 'ผู้เล่นหลุดการเชื่อมต่อ',
+    hint: 'ให้บอทเล่นแทนจนกว่าผู้เล่นจะกลับมา หรือโหวตเอาออกจากห้อง (ต้องได้เสียงข้างมากของผู้เล่นที่ออนไลน์)',
+    startBot: 'ให้บอทเล่นแทน',
+    startKick: 'โหวตเอาออก',
+    titleBot: (name: string, seat: string) => `โหวต: ให้บอทเล่นแทน ${name} (${seat})`,
+    titleKick: (name: string, seat: string) => `โหวต: เอา ${name} (${seat}) ออกจากห้อง`,
+    startedBy: (name: string) => `เริ่มโดย ${name}`,
+    tally: (yes: number, no: number, needed: number, eligible: number) =>
+      `เห็นด้วย ${yes} · ไม่เห็นด้วย ${no} · ต้องการ ${needed} จาก ${eligible} เสียง`,
+    yes: 'เห็นด้วย',
+    no: 'ไม่เห็นด้วย',
+    botPlayingYou: 'ตอนนี้บอทกำลังเล่นแทนคุณ',
+    reclaim: 'กลับมาเล่นเอง',
+    bot: 'บอท',
+  },
   learn: {
     kicker: 'บทสอนเล่น · สำหรับผู้เล่นใหม่',
     title: 'เรียนรู้ Contract Bridge',

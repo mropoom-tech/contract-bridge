@@ -169,3 +169,26 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
 - Lobby: greeting, side-by-side Create / Join cards, board count as segmented radio buttons with time estimate, large code input (join disabled while empty), "new to bridge" panel linking to tutorial + scoring reference.
 - Waiting room: 3-step progress (seats 4/4 → ready 4/4 → host starts), seats laid out around a mini table (N top, W left, E right, S bottom) with online dot, host/you/ready badges, take-seat button in the seat.
 - Screenshots checked at 1100px and 375px (lobby and waiting room with 2 bots). typecheck/lint clean, unit tests pass, e2e 8/8.
+
+## Disconnected players: bot takeover and kick votes (2026-11-18)
+
+- Room schema v3 (`migrateRoomState` upgrades v1/v2): `botSeats`, `kicked` (members removed by vote, with names), `vote`.
+- Commands: `vote:start {seat, kind: BOT|KICK}`, `vote:cast {voteId, yes}`, `seat:reclaim`.
+  - BOT: only during a match and only against a seated player who is offline right now.
+  - KICK: any phase before the match ends. In the waiting room the seat is freed; during a match the bot keeps the seat.
+  - Eligible voters are fixed at vote start: the starter plus the other online seated humans (target excluded). Needed = majority (floor(n/2)+1). The starter's yes counts. A vote is cancelled as soon as a majority becomes impossible.
+  - Kicked users are no longer members: their sockets are closed with 4003 and `join` is refused (403).
+  - Bot-played seats cannot act for the human until `seat:reclaim`.
+- Server bot (`worker/room/bot.ts`, `applyBotStep`):
+  - Passes in the auction. In play it leads low, plays low under a winning partner, otherwise wins as cheaply as possible, else plays low. It readies for the next board.
+  - It uses the same reducer transition as humans, so all rules and D1 outbox writes apply. It only sees its own seat's engine projection.
+  - The DO drives moves 700 ms apart after each accepted command and on reconnect.
+- UI:
+  - Vote panel on the table and in the waiting room: offline players, active vote with tally and yes/no buttons.
+  - "🤖 บอท" badge on seats; "take back my seat" banner; kick link on seat cards in the waiting room.
+- Evidence:
+  - Unit `votes-bots.test.ts` (10): majority/cancel, kick in waiting/match, reclaim, v2 migration, all-bot match to completion, bot declarer finishes 13 tricks, card choice.
+  - e2e `votes.e2e.test.ts` (2) over real WebSockets: BOT vote → bot passes and readies → player returns and reclaims; KICK vote → 4003 close + rejoin 403.
+  - Full e2e 10/10 twice. One earlier full run failed (including an existing multiplayer test) while the dev server was reloading after an edit; it was not reproduced in 2 reruns.
+  - Browser: 3 players dropped, voted bots in, bots passed and readied (screenshot).
+- Known limit: the bot is basic (always passes in the auction).

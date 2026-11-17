@@ -13,6 +13,7 @@ import { d1Store } from './d1-store';
 import { flushWrites, retryDelayMs } from './result-sync';
 import {
   acknowledgeWrites,
+  applyBotStep,
   createRoomState,
   handleCommand,
   isMember,
@@ -32,6 +33,8 @@ const SYNC_ATTEMPT_KEY = 'room:sync-attempt';
 const RETRY_AT_KEY = 'room:outbox-retry-at';
 const EMPTY_SINCE_KEY = 'room:empty-since';
 const ARCHIVE_RETRY_MS = 60_000;
+/** Pause between bot moves so humans can follow them. */
+const BOT_DELAY_MS = 700;
 const CLOSE_REPLACED = 4001;
 const CLOSE_REMOVED = 4003;
 const RATE_WINDOW_MS = 10_000;
@@ -47,6 +50,7 @@ export class BridgeRoom extends DurableObject<Env> {
   /** In-memory frame counters; reset on hibernation, which is acceptable. */
   private readonly rate = new WeakMap<WebSocket, { start: number; count: number }>();
   private flushing: Promise<void> | null = null;
+  private botsRunning = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -224,6 +228,7 @@ export class BridgeRoom extends DurableObject<Env> {
     online.add(userId);
     this.sendSnapshot(server, userId, online);
     this.broadcastSnapshots(server);
+    void this.driveBots(); // resume bots after hibernation/eviction
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -266,11 +271,7 @@ export class BridgeRoom extends DurableObject<Env> {
       return;
     }
 
-    const outcome = handleCommand(room, userId, cmd, {
-      rng: this.rng,
-      newId: () => crypto.randomUUID(),
-      now: () => new Date().toISOString(),
-    });
+    const outcome = handleCommand(room, userId, cmd, this.deps());
     if (outcome.persist) {
       try {
         await this.save(outcome.state); // persist state + dedup record before ack
@@ -292,6 +293,10 @@ export class BridgeRoom extends DurableObject<Env> {
     if (cmd.type === 'room:leave' && res.status === 'accepted') {
       for (const s of this.ctx.getWebSockets(userId)) s.close(CLOSE_REMOVED, 'Left the room');
     }
+    if (res.status === 'accepted') {
+      this.closeRemovedMembers();
+      void this.driveBots();
+    }
   }
 
   override async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
@@ -307,6 +312,55 @@ export class BridgeRoom extends DurableObject<Env> {
   override async webSocketError(ws: WebSocket): Promise<void> {
     this.broadcastSnapshots(ws);
     await this.markEmptyIfNobodyLeft(ws);
+  }
+
+  // ---------- bots ----------
+
+  private deps() {
+    return {
+      rng: this.rng,
+      newId: () => crypto.randomUUID(),
+      now: () => new Date().toISOString(),
+      online: this.onlineUsers(),
+    };
+  }
+
+  /** Disconnect anyone who is no longer a member (removed by vote). */
+  private closeRemovedMembers(): void {
+    const room = this.room;
+    if (!room) return;
+    for (const s of this.ctx.getWebSockets()) {
+      const a = s.deserializeAttachment() as Attachment | null;
+      if (a && !isMember(room, a.userId)) {
+        try {
+          s.close(CLOSE_REMOVED, 'Removed from the room');
+        } catch {
+          /* already closing */
+        }
+      }
+    }
+  }
+
+  /** Play bot moves one at a time (with a short pause) until a human must act. */
+  private async driveBots(): Promise<void> {
+    if (this.botsRunning) return;
+    this.botsRunning = true;
+    try {
+      for (let i = 0; i < 200; i++) {
+        await new Promise((r) => setTimeout(r, BOT_DELAY_MS));
+        const room = this.room;
+        if (!room) return;
+        const next = applyBotStep(room, this.deps());
+        if (!next) return;
+        await this.save(next);
+        this.broadcastSnapshots();
+        if (next.pendingWrites.length > room.pendingWrites.length) void this.flushOutbox();
+      }
+    } catch (e) {
+      console.error('bot_step_failed', { roomId: this.room?.roomId, name: (e as Error).name });
+    } finally {
+      this.botsRunning = false;
+    }
   }
 
   // ---------- helpers ----------

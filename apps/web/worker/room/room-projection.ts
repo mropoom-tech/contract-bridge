@@ -11,7 +11,7 @@ import {
   type SeatOccupant,
   type SeatSpecificSnapshot,
 } from '@bridge/shared';
-import { seatOf, type RoomState } from './room-state';
+import { seatOf, voteKindsAgainst, type RoomState } from './room-state';
 
 const NO_ACTIONS: AllowedActions = {
   claimSeat: [],
@@ -21,6 +21,9 @@ const NO_ACTIONS: AllowedActions = {
   calls: [],
   play: null,
   readyNext: false,
+  startVote: [],
+  castVote: false,
+  reclaim: false,
 };
 
 export const projectRoomForUser = (
@@ -30,7 +33,8 @@ export const projectRoomForUser = (
 ): SeatSpecificSnapshot => {
   const member = state.members.find((m) => m.userId === userId);
   const seat: Seat | null = member ? seatOf(state, userId) : null;
-  const nameOf = (id: string): string => state.members.find((m) => m.userId === id)?.displayName ?? '?';
+  const nameOf = (id: string): string =>
+    (state.members.find((m) => m.userId === id) ?? state.kicked.find((m) => m.userId === id))?.displayName ?? '?';
 
   const seats = Object.fromEntries(
     SEATS.map((s): [Seat, SeatOccupant | null] => {
@@ -75,6 +79,20 @@ export const projectRoomForUser = (
     completedBoards: state.completedBoards,
     totalNsScore,
     nextBoardReady: state.nextBoardReady,
+    botSeats: state.botSeats,
+    vote: state.vote
+      ? {
+          id: state.vote.id,
+          kind: state.vote.kind,
+          seat: state.vote.seat,
+          targetName: nameOf(state.vote.targetUserId),
+          startedByName: nameOf(state.vote.startedBy),
+          yes: state.vote.yes.length,
+          no: state.vote.no.length,
+          needed: state.vote.needed,
+          eligible: state.vote.eligible.length,
+        }
+      : null,
   };
 
   let allowed = NO_ACTIONS;
@@ -89,7 +107,19 @@ export const projectRoomForUser = (
       calls: view ? view.legalCalls.map(payloadFromCall) : [],
       play: view && view.toAct && view.legalCards.length > 0 ? { fromSeat: view.toAct, cards: view.legalCards } : null,
       readyNext: state.phase === 'BOARD_RESULT' && seat !== null,
+      startVote: SEATS.flatMap((s) => {
+        const kinds = voteKindsAgainst(state, userId, s, online);
+        return kinds.length > 0 ? [{ seat: s, kinds }] : [];
+      }),
+      castVote:
+        state.vote !== null &&
+        state.vote.eligible.includes(userId) &&
+        !state.vote.yes.includes(userId) &&
+        !state.vote.no.includes(userId),
+      reclaim: seat !== null && state.botSeats[seat],
     };
+    // A bot is playing your seat: no game actions until you take it back.
+    if (seat && state.botSeats[seat]) allowed = { ...allowed, calls: [], play: null, readyNext: false };
   }
 
   return {

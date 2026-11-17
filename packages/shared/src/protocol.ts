@@ -53,6 +53,21 @@ export const ClientCommandSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ ...mutating, type: z.literal('board:readyNext'), payload: z.object({ ready: z.boolean() }).strict() }).strict(),
+  z
+    .object({
+      ...mutating,
+      type: z.literal('vote:start'),
+      payload: z.object({ seat: SeatSchema, kind: z.enum(['BOT', 'KICK']) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...mutating,
+      type: z.literal('vote:cast'),
+      payload: z.object({ voteId: z.string().min(1).max(64), yes: z.boolean() }).strict(),
+    })
+    .strict(),
+  z.object({ ...mutating, type: z.literal('seat:reclaim'), payload: empty }).strict(),
   z.object({ ...base, type: z.literal('state:requestSnapshot'), payload: empty }).strict(),
 ]);
 export type ClientCommand = z.infer<typeof ClientCommandSchema>;
@@ -135,6 +150,23 @@ export interface PublicViewState {
   readonly completedBoards: readonly FinishedBoard[];
   readonly totalNsScore: number;
   readonly nextBoardReady: Readonly<Record<Seat, boolean>> | null;
+  /** Seats currently played by the server bot (player disconnected and replaced by vote). */
+  readonly botSeats: Readonly<Record<Seat, boolean>>;
+  readonly vote: PublicVote | null;
+}
+
+export type VoteKind = 'BOT' | 'KICK';
+
+export interface PublicVote {
+  readonly id: string;
+  readonly kind: VoteKind;
+  readonly seat: Seat;
+  readonly targetName: string;
+  readonly startedByName: string;
+  readonly yes: number;
+  readonly no: number;
+  readonly needed: number;
+  readonly eligible: number;
 }
 
 export interface AllowedActions {
@@ -145,6 +177,12 @@ export interface AllowedActions {
   readonly calls: readonly CallPayload[];
   readonly play: { readonly fromSeat: Seat; readonly cards: readonly Card[] } | null;
   readonly readyNext: boolean;
+  /** Seats you may start a vote against, with the allowed kinds. */
+  readonly startVote: readonly { readonly seat: Seat; readonly kinds: readonly VoteKind[] }[];
+  /** You may vote in the active vote. */
+  readonly castVote: boolean;
+  /** Your seat is bot-controlled and you may take it back. */
+  readonly reclaim: boolean;
 }
 
 export interface SeatSpecificSnapshot {

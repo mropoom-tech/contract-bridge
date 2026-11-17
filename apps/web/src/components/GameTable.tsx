@@ -8,6 +8,7 @@ import { useRoom } from '../stores/room';
 import { AuctionGrid, BiddingBox } from './Auction';
 import { CardBack, CardFace } from './CardFace';
 import { ResultPanel } from './ResultPanel';
+import { VotePanel } from './VotePanel';
 import { Button, Panel } from './ui';
 
 const teamText = (s: Seat) => (partnershipOf(s) === 'NS' ? 'text-ns-400' : 'text-ew-400');
@@ -25,6 +26,11 @@ const SeatLabel = ({ pub, seat, self }: { pub: PublicViewState; seat: Seat; self
       <span className="max-w-28 truncate">{occ?.displayName ?? '—'}</span>
       {seat === self && <span className="text-xs">({t.you})</span>}
       {pub.dealer === seat && <span title={t.dealer} className="text-xs">◆</span>}
+      {pub.botSeats[seat] && (
+        <span className="rounded bg-sky-700 px-1 text-xs text-white" title={t.vote.bot}>
+          🤖 {t.vote.bot}
+        </span>
+      )}
       {pub.dummySeat === seat && pub.contract && <span className="rounded bg-white/20 px-1 text-xs">{t.dummy}</span>}
       {pub.contract?.declarer === seat && <span className="rounded bg-white/20 px-1 text-xs">Decl.</span>}
     </div>
@@ -253,6 +259,7 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
       </div>
 
       <aside className="space-y-4">
+        <VotePanel snapshot={snapshot} />
         {showResult && (
           <Panel>
             <ResultPanel

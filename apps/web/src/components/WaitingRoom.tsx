@@ -4,6 +4,7 @@ import type { SeatSpecificSnapshot } from '@bridge/shared';
 import { t } from '../i18n/th';
 import { useRoom } from '../stores/room';
 import { Button, Panel } from './ui';
+import { VotePanel } from './VotePanel';
 
 const teamClasses = (seat: Seat) =>
   partnershipOf(seat) === 'NS' ? 'border-ns-400/60 bg-ns-600/25' : 'border-ew-400/60 bg-ew-600/25';
@@ -41,7 +42,19 @@ const SEAT_CELL: Record<Seat, string> = {
   S: 'col-start-2 row-start-3',
 };
 
-const SeatCard = ({ seat, snapshot, busy, onClaim }: { seat: Seat; snapshot: SeatSpecificSnapshot; busy: boolean; onClaim: () => void }) => {
+const SeatCard = ({
+  seat,
+  snapshot,
+  busy,
+  onClaim,
+  onKick,
+}: {
+  seat: Seat;
+  snapshot: SeatSpecificSnapshot;
+  busy: boolean;
+  onClaim: () => void;
+  onKick?: () => void;
+}) => {
   const { public: pub, you, allowedActions: allowed } = snapshot;
   const occ = pub.seats[seat];
   const isMe = seat === you.seat;
@@ -55,6 +68,11 @@ const SeatCard = ({ seat, snapshot, busy, onClaim }: { seat: Seat; snapshot: Sea
       </div>
       {occ ? (
         <div className="min-w-0 space-y-1 text-sm">
+          {allowed.startVote.some((v) => v.seat === seat && v.kinds.includes('KICK')) && onKick && (
+            <button type="button" onClick={onKick} disabled={busy} className="float-right text-[11px] text-red-300 hover:underline">
+              {t.vote.startKick}
+            </button>
+          )}
           <div className="flex min-w-0 items-center gap-1.5">
             <span className={`size-2.5 shrink-0 rounded-full ${occ.online ? 'bg-emerald-400' : 'bg-gray-500'}`} aria-label={occ.online ? t.online : t.offline} role="img" />
             <strong className="truncate">{occ.displayName}</strong>
@@ -95,6 +113,7 @@ export const WaitingRoom = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) =>
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-bold">{t.waitingRoom}</h1>
       <RoomCodeCard code={pub.roomCode} />
+      <VotePanel snapshot={snapshot} />
 
       <ol className="grid grid-cols-3 gap-2 text-xs sm:text-sm" aria-label={t.progress}>
         {[
@@ -121,7 +140,13 @@ export const WaitingRoom = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) =>
         <div className="mx-auto grid max-w-xl grid-cols-3 items-center gap-2 sm:gap-3">
           {SEATS.map((seat) => (
             <div key={seat} className={SEAT_CELL[seat]}>
-              <SeatCard seat={seat} snapshot={snapshot} busy={busy} onClaim={() => send('room:claimSeat', { seat })} />
+              <SeatCard
+                seat={seat}
+                snapshot={snapshot}
+                busy={busy}
+                onClaim={() => send('room:claimSeat', { seat })}
+                onKick={() => send('vote:start', { seat, kind: 'KICK' })}
+              />
             </div>
           ))}
           <div className="felt col-start-2 row-start-2 grid min-h-28 place-items-center rounded-2xl border border-black/40 text-center shadow-inner">
