@@ -25,9 +25,13 @@ import {
 } from './room-state';
 
 import { INTERNAL_USER_HEADER } from './internal';
+import { archiveRoomStatements, nextAlarmAt, parseTtlSeconds, shouldCloseRoom } from './room-lifecycle';
 
 const STATE_KEY = 'room:state';
 const SYNC_ATTEMPT_KEY = 'room:sync-attempt';
+const RETRY_AT_KEY = 'room:outbox-retry-at';
+const EMPTY_SINCE_KEY = 'room:empty-since';
+const ARCHIVE_RETRY_MS = 60_000;
 const CLOSE_REPLACED = 4001;
 const CLOSE_REMOVED = 4003;
 const RATE_WINDOW_MS = 10_000;
@@ -50,9 +54,15 @@ export class BridgeRoom extends DurableObject<Env> {
       const raw = await ctx.storage.get<unknown>(STATE_KEY);
       // Restore after eviction/hibernation/deploy; upgrade older snapshot schemas.
       this.room = raw === undefined ? null : migrateRoomState(raw);
-      if (this.room && this.room.pendingWrites.length > 0 && (await ctx.storage.getAlarm()) === null) {
-        await ctx.storage.setAlarm(Date.now() + retryDelayMs(0));
+      if (!this.room) return;
+      if (this.room.pendingWrites.length > 0 && (await ctx.storage.get<number>(RETRY_AT_KEY)) === undefined) {
+        await ctx.storage.put(RETRY_AT_KEY, Date.now() + retryDelayMs(0));
       }
+      // Rooms created before auto-close existed (or woken with nobody connected) start their empty timer now.
+      if (ctx.getWebSockets().length === 0 && (await ctx.storage.get<number>(EMPTY_SINCE_KEY)) === undefined) {
+        await ctx.storage.put(EMPTY_SINCE_KEY, Date.now());
+      }
+      await this.scheduleAlarm();
     });
   }
 
@@ -65,7 +75,8 @@ export class BridgeRoom extends DurableObject<Env> {
       const writes = this.room?.pendingWrites ?? [];
       if (writes.length === 0) return;
       // Safety net first: if this isolate dies mid-flush the alarm still retries.
-      if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(0));
+      await this.ctx.storage.put(RETRY_AT_KEY, Date.now() + retryDelayMs(0));
+      await this.scheduleAlarm();
       const result = await flushWrites(d1Store(this.env.DB), writes);
       for (const id of result.conflicts) {
         console.error('d1_result_conflict', { roomId: this.room?.roomId, writeId: id });
@@ -74,12 +85,13 @@ export class BridgeRoom extends DurableObject<Env> {
       if (result.error) {
         const attempt = ((await this.ctx.storage.get<number>(SYNC_ATTEMPT_KEY)) ?? 0) + 1;
         await this.ctx.storage.put(SYNC_ATTEMPT_KEY, attempt);
-        await this.ctx.storage.setAlarm(Date.now() + retryDelayMs(attempt));
+        await this.ctx.storage.put(RETRY_AT_KEY, Date.now() + retryDelayMs(attempt));
         console.error('d1_sync_failed', { roomId: this.room?.roomId, attempt, name: (result.error as Error)?.name });
       } else {
         await this.ctx.storage.delete(SYNC_ATTEMPT_KEY);
-        if ((this.room?.pendingWrites.length ?? 0) === 0) await this.ctx.storage.deleteAlarm();
+        if ((this.room?.pendingWrites.length ?? 0) === 0) await this.ctx.storage.delete(RETRY_AT_KEY);
       }
+      await this.scheduleAlarm();
     };
     this.flushing = run().finally(() => {
       this.flushing = null;
@@ -87,8 +99,56 @@ export class BridgeRoom extends DurableObject<Env> {
     return this.flushing;
   }
 
+  // ---------- alarm: outbox retry + empty-room auto-close ----------
+
+  private async lifecycleInput() {
+    return {
+      now: Date.now(),
+      emptySince: (await this.ctx.storage.get<number>(EMPTY_SINCE_KEY)) ?? null,
+      openConnections: this.openSockets().length,
+      pendingWrites: this.room?.pendingWrites.length ?? 0,
+      outboxRetryAt: (await this.ctx.storage.get<number>(RETRY_AT_KEY)) ?? null,
+      ttlMs: parseTtlSeconds(this.env.ROOM_EMPTY_TTL_SECONDS),
+    };
+  }
+
+  /** One alarm serves both the outbox retry and the empty-room deadline. */
+  private async scheduleAlarm(): Promise<void> {
+    if (!this.room) return;
+    const at = nextAlarmAt(await this.lifecycleInput());
+    if (at === null) await this.ctx.storage.deleteAlarm();
+    else await this.ctx.storage.setAlarm(at);
+  }
+
+  private async markEmptyIfNobodyLeft(exclude?: WebSocket): Promise<void> {
+    if (!this.room || this.openSockets(exclude).length > 0) return;
+    if ((await this.ctx.storage.get<number>(EMPTY_SINCE_KEY)) === undefined) await this.ctx.storage.put(EMPTY_SINCE_KEY, Date.now());
+    await this.scheduleAlarm();
+  }
+
   override async alarm(): Promise<void> {
-    await this.flushOutbox();
+    if (!this.room) return;
+    if (this.room.pendingWrites.length > 0) await this.flushOutbox();
+    if (shouldCloseRoom(await this.lifecycleInput())) await this.closeRoom();
+    else await this.scheduleAlarm();
+  }
+
+  /** Archive in D1, then delete all DO storage. Results were already flushed (checked by shouldCloseRoom). */
+  private async closeRoom(): Promise<void> {
+    const room = this.room;
+    if (!room) return;
+    try {
+      const nowIso = new Date().toISOString();
+      await this.env.DB.batch(archiveRoomStatements(room.roomId, nowIso).map((st) => this.env.DB.prepare(st.sql).bind(...st.params)));
+    } catch (e) {
+      console.error('room_archive_failed', { roomId: room.roomId, name: (e as Error).name });
+      await this.ctx.storage.setAlarm(Date.now() + ARCHIVE_RETRY_MS);
+      return;
+    }
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.room = null;
+    console.log('room_closed', { roomId: room.roomId, reason: 'empty' });
   }
 
   private async save(next: RoomState): Promise<void> {
@@ -101,6 +161,9 @@ export class BridgeRoom extends DurableObject<Env> {
   async initialize(init: RoomInit): Promise<boolean> {
     if (this.room) return false;
     await this.save(createRoomState(init));
+    // Nobody is connected yet: the creator must open the room before the empty timer runs out.
+    await this.ctx.storage.put(EMPTY_SINCE_KEY, Date.now());
+    await this.scheduleAlarm();
     return true;
   }
 
@@ -155,6 +218,8 @@ export class BridgeRoom extends DurableObject<Env> {
         /* already closing */
       }
     }
+    await this.ctx.storage.delete(EMPTY_SINCE_KEY);
+    await this.scheduleAlarm();
     const online = this.onlineUsers();
     online.add(userId);
     this.sendSnapshot(server, userId, online);
@@ -236,10 +301,12 @@ export class BridgeRoom extends DurableObject<Env> {
       /* already closed */
     }
     this.broadcastSnapshots(ws);
+    await this.markEmptyIfNobodyLeft(ws);
   }
 
   override async webSocketError(ws: WebSocket): Promise<void> {
     this.broadcastSnapshots(ws);
+    await this.markEmptyIfNobodyLeft(ws);
   }
 
   // ---------- helpers ----------

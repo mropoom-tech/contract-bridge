@@ -36,7 +36,9 @@
 	],
 	"vars": {
 		/** Comma-separated extra allowed Origins. Same-origin is always allowed. */
-		"ALLOWED_ORIGINS": ""
+		"ALLOWED_ORIGINS": "",
+		/** Seconds an empty room (nobody connected) stays open before it is closed. */
+		"ROOM_EMPTY_TTL_SECONDS": "900"
 	},
 	"observability": {
 		"enabled": true

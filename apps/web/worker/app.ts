@@ -69,7 +69,7 @@ const clientIp = (c: Ctx): string | null => c.req.header('CF-Connecting-IP') ?? 
 const roomStub = (env: Env, roomId: string) => env.BRIDGE_ROOMS.get(env.BRIDGE_ROOMS.idFromName(roomId));
 
 const findRoomId = async (db: D1Database, code: string): Promise<string | null> =>
-  (await db.prepare('SELECT id FROM rooms WHERE code = ?').bind(code).first<{ id: string }>())?.id ?? null;
+  (await db.prepare("SELECT id FROM rooms WHERE code = ? AND status <> 'archived'").bind(code).first<{ id: string }>())?.id ?? null;
 
 /** Reject cross-site requests on cookie-authenticated mutations (CSRF) and WS upgrades. */
 const originGuard = createMiddleware<AppEnv>(async (c, next) => {
