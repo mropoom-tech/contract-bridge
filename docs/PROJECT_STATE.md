@@ -125,3 +125,11 @@ E2E covers: 4 guests, create/join, 5th player `ROOM_FULL`, unauthenticated 401, 
 ## Next exact action
 
 Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a), then authorize the first deploy. After deploy: run the §7 smoke checklist with 4 devices (also closes Phase 3 DoD) and record the URL + commit SHA here. Code-side leftovers: `/api/matches/:id/summary`, accessibility audit, mobile bidding drawer.
+
+## First production deploy (2026-11-18)
+
+- URL: https://contract-bridge-online.mropoomkung.workers.dev
+- GitHub Actions "Deploy to Cloudflare Workers" run #3 (commit b7ee33d): all steps green, including remote D1 migrations.
+- CI run #2 on b7ee33d green (checks + e2e).
+- Smoke checks from a dev machine: `/api/health` 200, `/` 200, deep link `/play` 200, guest create 201 + `/api/auth/me` 200 (D1 write/read works), foreign Origin rejected with 403.
+- Not yet done: §7 four-device smoke test (seats, private hands, full board, refresh mid-play), repository variable `PRODUCTION_URL`.
