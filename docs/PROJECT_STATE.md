@@ -3,7 +3,7 @@
 **Last reviewed:** 2026-11-17 (Phases 0–4 implemented and verified locally; nothing deployed)
 **Implementation status:** Phase 0, 1, 2 done (local). Phase 3 playable UI done locally; DoD (4 humans, 4 boards, real phones) and full a11y audit open. Phase 4 hardening done locally; CI/deploy workflows written but never run; production deploy + smoke test blocked on owner's GitHub/Cloudflare setup and authorization.
 **Deployment status:** NOT DEPLOYED / UNVERIFIED.
-**Git:** folder is NOT yet a git repository (no commits).
+**Git:** local repository on branch `main`; initial commit `f92a5b9` (phases 0–4). No remote.
 **GitHub URL:** NOT PROVIDED.
 **Cloudflare URL:** NOT PROVIDED.
 **Cloudflare D1 database:** binding `DB` (`contract-bridge-db`) in `wrangler.jsonc` with **no `database_id`** (local only). Remote DB not created. Local migration `0001_initial.sql` applied.
@@ -111,7 +111,6 @@ E2E covers: 4 guests, create/join, 5th player `ROOM_FULL`, unauthenticated 401, 
 ## Known blockers / notes
 
 - GitHub repository, Cloudflare account, remote D1 ID, secrets, production domain not supplied. Nothing deployed.
-- Not a git repository yet.
 - npm 11 blocks install scripts; `workerd` and `esbuild` approved via `npm approve-scripts`.
 - In local dev (Vite + Miniflare), a server `close()` issued from the DO's `fetch()` on an older socket was not delivered to the client; `close()` from `webSocketMessage` was. Mitigated by the explicit `session:replaced` message. Re-check on real Cloudflare in Phase 4.
 - CI and deploy workflows have never run (no GitHub repo). The Linux `npm ci` with a Windows-generated lockfile is untested.
