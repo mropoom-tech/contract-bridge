@@ -163,3 +163,9 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
 - Room lookup by code ignores archived rooms (404 without waking the DO).
 - Evidence: unit 26 worker tests; live manual check `e2e/room-close-check.ts` with `.dev.vars` TTL 10 s → emptied room 404 + D1 `archived`, occupied room still 200/`waiting` with socket open: PASS. Full e2e 8/8 with default TTL.
 - Not live-tested: closing while outbox writes are pending (covered by unit policy tests only).
+
+## Lobby / waiting room polish (2026-11-18)
+
+- Lobby: greeting, side-by-side Create / Join cards, board count as segmented radio buttons with time estimate, large code input (join disabled while empty), "new to bridge" panel linking to tutorial + scoring reference.
+- Waiting room: 3-step progress (seats 4/4 → ready 4/4 → host starts), seats laid out around a mini table (N top, W left, E right, S bottom) with online dot, host/you/ready badges, take-seat button in the seat.
+- Screenshots checked at 1100px and 375px (lobby and waiting room with 2 bots). typecheck/lint clean, unit tests pass, e2e 8/8.
