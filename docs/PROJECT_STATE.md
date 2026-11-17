@@ -141,3 +141,9 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
 - Game status bar: labelled tiles (Board, Dealer, Vul with red highlight when vulnerable, Contract), pulsing "your turn" pill, team trick pills.
 - Dev note: setting the real `database_id` moved local D1 state to a new file; run `npx wrangler d1 migrations apply DB --local -c apps/web/wrangler.jsonc` once after pulling.
 - typecheck/lint clean; unit tests 34 + 90 + 5 pass.
+
+## Scoring dialog (2026-11-18)
+
+- `apps/web/src/lib/score-explain.ts`: pure `explainScore` turns the engine's `scoreBreakdown` into items split below the line (contract trick points) / above the line (overtricks, game/partscore/slam/insult bonuses, undertrick penalties), each with the board's actual formula and the general rule. Throws if items do not sum to the engine total; a test checks every level × strain × doubling × vulnerability × 0..13 tricks.
+- `components/ScoreDialog.tsx`: native `<dialog>` that auto-opens once per finished board, reopenable via "ดูวิธีคิดคะแนน". Rows open their explanation on mouse hover, long-press (touch/pen, 450 ms), keyboard focus + Enter, or click.
+- Browser check (local, 1 human + 3 bots): 1NT by E made +3 non-vul showed below 40 / above 140 (90 overtricks + 50 partscore) = 180; close/reopen works; dialog 337px wide at 375px viewport with no horizontal overflow.
