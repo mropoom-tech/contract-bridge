@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { t } from './i18n/th';
+import { LearnIndexPage, LessonPage, ScoringReferencePage } from './pages/LearnPage';
 import { navigate, useRoute, type Route } from './lib/router';
 import { useSession } from './stores/session';
 import { Button, ErrorBox, Spinner } from './components/ui';
@@ -29,6 +30,10 @@ export default function App() {
   }, [route, status]);
 
   if (route.name === 'landing') return <LandingPage />;
+  // Tutorial pages are public: no sign-in needed to learn the game.
+  if (route.name === 'learn') return <LearnIndexPage />;
+  if (route.name === 'lesson') return <LessonPage id={route.id} />;
+  if (route.name === 'scoring') return <ScoringReferencePage />;
   if (route.name === 'notFound') {
     return (
       <AppShell>

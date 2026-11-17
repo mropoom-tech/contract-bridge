@@ -20,6 +20,16 @@ export const AppShell = ({ children, wide = false }: { children: ReactNode; wide
           <span aria-hidden="true">♠♥♦♣</span>
           <span className="hidden sm:inline">{t.brand}</span>
         </a>
+        <a
+          href="/learn"
+          onClick={(e) => {
+            e.preventDefault();
+            navigate('/learn');
+          }}
+          className="ml-auto rounded-lg px-2 py-1 text-sm text-ivory-100 hover:bg-white/10"
+        >
+          📘 {t.learnNav}
+        </a>
         {user && (
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <span className="truncate text-ivory-200">

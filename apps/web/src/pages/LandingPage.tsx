@@ -24,6 +24,9 @@ export const LandingPage = () => {
           <Button variant="primary" className="px-8 text-lg" onClick={() => navigate(status === 'authenticated' ? '/lobby' : '/play')}>
             {t.playNow}
           </Button>
+          <Button variant="secondary" onClick={() => navigate('/learn')}>
+            {t.learnNav}
+          </Button>
           <Button variant="secondary" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp}>
             {t.howToPlay}
           </Button>
