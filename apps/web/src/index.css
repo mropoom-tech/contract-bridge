@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  --color-felt-950: #06231c;
+  --color-felt-900: #0b3a2e;
+  --color-felt-800: #0f4d3d;
+  --color-felt-700: #146150;
+  --color-felt-600: #1b7a64;
+  --color-charcoal-950: #121416;
+  --color-charcoal-900: #1b1e21;
+  --color-charcoal-800: #262a2e;
+  --color-charcoal-700: #343a40;
+  --color-gold-300: #ecd9a4;
+  --color-gold-400: #dcc07a;
+  --color-gold-500: #c9a54f;
+  --color-ivory-50: #fffdf6;
+  --color-ivory-100: #faf5e6;
+  --color-ivory-200: #efe6cc;
+  --color-ns-400: #6fa8dc;
+  --color-ns-600: #2f6fa8;
+  --color-ew-400: #e6a06a;
+  --color-ew-600: #b8682d;
+  --color-suit-red: #c0262d;
+  --color-suit-black: #1b1e21;
+  --font-sans: 'Noto Sans Thai', system-ui, 'Segoe UI', sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-felt-950);
+  color: var(--color-ivory-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.felt {
+  background:
+    radial-gradient(ellipse at center, var(--color-felt-700) 0%, var(--color-felt-800) 45%, var(--color-felt-900) 100%);
+}
+
+.card-back {
+  background:
+    repeating-linear-gradient(45deg, #7a1f2b 0 6px, #8e2a37 6px 12px);
+  border: 2px solid var(--color-ivory-100);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-gold-400);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card-enter {
+    animation: card-in 160ms ease-out;
+  }
+  @keyframes card-in {
+    from {
+      transform: scale(0.85);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+}

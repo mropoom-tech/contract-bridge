@@ -1,0 +1,58 @@
+name: Deploy to Cloudflare Workers
+
+# Manual only. Production changes require the owner to run this workflow and to
+# approve the protected "production" environment in GitHub settings.
+on:
+  workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: Apply pending D1 migrations to the REMOTE database before deploying
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Refuse to deploy without a real D1 database_id
+        run: |
+          if ! grep -Eq '"database_id"[[:space:]]*:[[:space:]]*"[0-9a-f-]{36}"' apps/web/wrangler.jsonc; then
+            echo "apps/web/wrangler.jsonc has no real D1 database_id. Create the DB and commit its id first (docs/DEPLOYMENT.md)."
+            exit 1
+          fi
+      - run: npm run typecheck && npm run lint && npm test && npm run build
+      - name: Apply remote D1 migrations
+        if: ${{ inputs.apply_migrations }}
+        uses: cloudflare/wrangler-action@v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/web
+          command: d1 migrations apply DB --remote
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/web
+          command: deploy
+      - name: Smoke test health endpoint
+        run: |
+          URL="${{ vars.PRODUCTION_URL }}"
+          if [ -z "$URL" ]; then echo "Set repository variable PRODUCTION_URL to enable the smoke check"; exit 0; fi
+          curl -sf "$URL/api/health"
