@@ -9,6 +9,7 @@ import { AuctionGrid, BiddingBox } from './Auction';
 import { CardBack, CardFace } from './CardFace';
 import { ResultPanel } from './ResultPanel';
 import { VotePanel } from './VotePanel';
+import { MiniPanel } from './MiniPanel';
 import { Button, Panel } from './ui';
 
 const teamText = (s: Seat) => (partnershipOf(s) === 'NS' ? 'text-ns-400' : 'text-ew-400');
@@ -146,7 +147,7 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
 
   const turnText = (() => {
     if (!pub.turnSeat || showResult) return null;
-    if (allowed.calls.length > 0) return t.yourTurn;
+    if (allowed.calls.length > 0 || allowed.miniChoices.length > 0) return t.yourTurn;
     if (play) return play.fromSeat === you.seat ? t.yourTurn : t.yourTurnDummy;
     const ctrl = pub.controllerSeat ?? pub.turnSeat;
     return t.waitingFor(pub.seats[ctrl]?.displayName ?? ctrl);
@@ -214,7 +215,7 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
             />
             <StatTile
               label={t.contract}
-              value={pub.contract ? `${contractText(pub.contract)} · ${pub.contract.declarer}` : '—'}
+              value={pub.contract ? `${contractText(pub.contract)} · ${pub.contract.declarer}` : pub.phase === 'DECLARING' ? t.mini.choosing : '—'}
               tone={pub.contract ? 'gold' : undefined}
             />
           </div>
@@ -260,6 +261,7 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
 
       <aside className="space-y-4">
         <VotePanel snapshot={snapshot} />
+        {pub.mode === 'MINI' && <MiniPanel snapshot={snapshot} />}
         {showResult && (
           <Panel>
             <ResultPanel
@@ -277,7 +279,7 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
             <BiddingBox allowed={allowed.calls} busy={busy} onCall={(c) => send('auction:call', c)} />
           </Panel>
         )}
-        {pub.dealer && (
+        {pub.dealer && pub.mode !== 'MINI' && (
           <Panel title={t.auction}>
             <AuctionGrid dealer={pub.dealer} history={pub.auctionHistory} turnSeat={pub.phase === 'BIDDING' ? pub.turnSeat : null} />
           </Panel>

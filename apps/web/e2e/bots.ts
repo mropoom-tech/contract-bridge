@@ -36,7 +36,8 @@ const runBot = async (i: number) => {
     if (pub.phase === 'WAITING') {
       if (!snap.you.seat && a.claimSeat[0]) cmd = ['room:claimSeat', { seat: a.claimSeat[0] }];
       else if (snap.you.seat && !pub.seats[snap.you.seat]?.ready) cmd = ['room:ready', { ready: true }];
-    } else if (a.calls.length > 0) {
+    } else if (a.miniChoices.length > 0) cmd = ['mini:declare', { strain: 'NT', game: false }];
+    else if (a.calls.length > 0) {
       const noBidYet = pub.auctionHistory.every((h) => h.call.kind !== 'BID');
       cmd = ['auction:call', openBid && i === 1 && noBidYet ? { kind: 'BID', level: 1, strain: 'NT' } : { kind: 'PASS' }];
     }

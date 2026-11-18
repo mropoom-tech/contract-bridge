@@ -186,6 +186,7 @@ export class BridgeRoom extends DurableObject<Env> {
       code: r.code,
       phase: r.phase,
       targetBoards: r.targetBoards,
+      mode: r.mode,
       memberCount: r.members.length,
       seatsTaken: Object.values(r.seats).filter(Boolean).length,
       isMember: isMember(r, userId),

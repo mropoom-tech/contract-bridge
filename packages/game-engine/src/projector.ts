@@ -1,6 +1,7 @@
 import { legalCalls, summarizeAuction } from './auction.js';
 import { controllingSeat, isDummyRevealed, legalCards, seatToPlay } from './play.js';
-import { SEATS } from './seats.js';
+import { MINI_CHOICES } from './minibridge.js';
+import { partnerOf, SEATS } from './seats.js';
 import type {
   AuctionEntry,
   BoardPhase,
@@ -10,6 +11,7 @@ import type {
   Card,
   CompletedTrick,
   Contract,
+  MiniInfo,
   Seat,
   Trick,
   Vulnerability,
@@ -43,6 +45,10 @@ export interface BoardView {
   /** Legal cards if the viewer must play now (may be from dummy). */
   readonly legalCards: readonly Card[];
   readonly result: BoardResult | null;
+  /** Mini Bridge: announced HCP and declarer (public). */
+  readonly mini: MiniInfo | null;
+  /** Mini Bridge: contract choices if the viewer is the declarer choosing now. */
+  readonly miniChoices: readonly { readonly strain: Contract['strain']; readonly game: boolean }[];
 }
 
 export const projectBoardForSeat = (board: BoardState, viewer: Seat | null): BoardView => {
@@ -59,6 +65,9 @@ export const projectBoardForSeat = (board: BoardState, viewer: Seat | null): Boa
     toAct = summarizeAuction(board.auction).toAct;
     controller = toAct;
     if (viewer !== null && viewer === toAct) calls = legalCalls(board.auction);
+  } else if (board.phase === 'DECLARING' && board.mini?.declarer) {
+    toAct = board.mini.declarer;
+    controller = toAct;
   } else if (board.phase === 'PLAYING' && play) {
     toAct = seatToPlay(play);
     controller = controllingSeat(play);
@@ -66,6 +75,8 @@ export const projectBoardForSeat = (board: BoardState, viewer: Seat | null): Boa
   }
 
   const dummyRevealed = play !== null && isDummyRevealed(play);
+  // Mini Bridge: dummy goes face up before declarer chooses the contract.
+  const miniDummy = board.phase === 'DECLARING' && board.mini?.declarer ? partnerOf(board.mini.declarer) : null;
 
   return {
     boardNumber: board.boardNumber,
@@ -74,7 +85,7 @@ export const projectBoardForSeat = (board: BoardState, viewer: Seat | null): Boa
     phase: board.phase,
     viewer,
     ownHand: viewer === null ? [] : [...remaining[viewer]],
-    dummyHand: play && dummyRevealed ? [...play.hands[play.contract.dummy]] : null,
+    dummyHand: play && dummyRevealed ? [...play.hands[play.contract.dummy]] : miniDummy ? [...board.deal[miniDummy]] : null,
     handCounts,
     auction: board.auction.calls.map((e) => ({ seat: e.seat, call: e.call })),
     contract: play ? play.contract : null,
@@ -85,5 +96,7 @@ export const projectBoardForSeat = (board: BoardState, viewer: Seat | null): Boa
     legalCalls: calls,
     legalCards: cards,
     result: board.result,
+    mini: board.mini ?? null,
+    miniChoices: board.phase === 'DECLARING' && viewer !== null && viewer === board.mini?.declarer ? MINI_CHOICES : [],
   };
 };

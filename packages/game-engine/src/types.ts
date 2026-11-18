@@ -59,6 +59,8 @@ export interface PlayState {
   readonly hands: Hands;
   readonly completedTricks: readonly CompletedTrick[];
   readonly currentTrick: Trick;
+  /** Mini Bridge: dummy is face up before the opening lead. */
+  readonly dummyFaceUp?: boolean;
 }
 
 export interface BoardConfiguration {
@@ -78,7 +80,17 @@ export type BoardResult =
       readonly ewScore: number;
     };
 
-export type BoardPhase = 'BIDDING' | 'PLAYING' | 'COMPLETED';
+/** DECLARING: Mini Bridge only — declarer is choosing the contract (no auction). */
+export type BoardPhase = 'BIDDING' | 'DECLARING' | 'PLAYING' | 'COMPLETED';
+
+export type GameMode = 'CLASSIC' | 'MINI';
+
+/** Public Mini Bridge facts: every player's high-card points are announced. */
+export interface MiniInfo {
+  readonly hcp: Readonly<Record<Seat, number>>;
+  /** null when the board is passed out (20–20). */
+  readonly declarer: Seat | null;
+}
 
 export interface BoardState extends BoardConfiguration {
   readonly phase: BoardPhase;
@@ -87,6 +99,8 @@ export interface BoardState extends BoardConfiguration {
   readonly auction: AuctionState;
   readonly play: PlayState | null;
   readonly result: BoardResult | null;
+  /** Present only for Mini Bridge boards. */
+  readonly mini?: MiniInfo;
 }
 
 export type EngineErrorCode =

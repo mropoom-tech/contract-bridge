@@ -224,3 +224,26 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
   - 3NTX E vul −2 = NS +500 (200 + 300).
   - No horizontal overflow at 375px.
   - typecheck/lint clean, unit tests pass, build OK.
+
+## Mini Bridge mode (2026-11-18)
+
+- Engine `packages/game-engine/src/minibridge.ts`:
+  - HCP (A4 K3 Q2 J1). The side with more than 20 points declares; its player with more points is declarer, and a tie goes to the seat nearer the dealer clockwise. A 20–20 deal is passed out (0).
+  - Dummy is face up before the contract is chosen (`PlayState.dummyFaceUp`). The declarer picks the denomination and part-score (1-level) or game (3NT / 4M / 5m). There is no doubling, and declarer's LHO leads.
+  - Standard duplicate scoring.
+  - New board phase `DECLARING`. The projector exposes `mini` (public HCP + declarer) and `miniChoices` only to the declarer.
+  - `test/minibridge.test.ts` (7 tests).
+- Room schema v4 adds `mode: 'CLASSIC' | 'MINI'`; older rooms migrate to CLASSIC.
+  - `POST /rooms` accepts `mode`; new command `mini:declare {strain, game}`; room phase `DECLARING`.
+  - A 20–20 deal (start or next board) is recorded like any finished board.
+  - Bot declarer: 8+ card fit (majors first) else NT; game with 25+ combined points.
+  - `worker/room/mini-room.test.ts` (5 tests): projection to all seats, declarer-only choice, full bot match, 20–20 recording, bot choice.
+- UI:
+  - Lobby mode picker (Contract Bridge / Mini Bridge); mode badge in the waiting room.
+  - `MiniPanel`: HCP table per side with the declarer marked, a waiting message, and the declarer's chooser (strain, part-score/game with level and tricks needed, hint). The auction panel is hidden in Mini.
+- Browser (local, port 5174, 1 human + 3 dev bots, 8-board Mini room):
+  - Bot declarer boards.
+  - A 20–20 board shown as passed out.
+  - Human declarer on board 6: chooser shown, 1NT chosen, W led, play continued from dummy.
+- Checks: typecheck/lint clean. Unit web 65, engine 97 (branches 93.26%), shared 5. e2e 10/10. Build OK.
+- Dev note: another local app was occupying port 5173, so `.claude/launch.json` gained `web-5174`. The e2e and bot scripts take `E2E_BASE_URL`.

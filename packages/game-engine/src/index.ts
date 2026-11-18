@@ -7,3 +7,4 @@ export * from './play.js';
 export * from './scoring.js';
 export * from './game.js';
 export * from './projector.js';
+export * from './minibridge.js';

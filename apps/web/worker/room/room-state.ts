@@ -4,14 +4,20 @@
  */
 import {
   boardCall,
+  boardDeclareMini,
   boardPlay,
   createBoard,
+  createMiniBoard,
+  handHcp,
+  partnerOf,
   projectBoardForSeat,
   seatToPlay,
   trumpOf,
   SEATS,
   type BoardState,
+  type Card,
   type EngineErrorCode,
+  type Strain,
   type RandomSource,
   type Seat,
 } from '@bridge/game-engine';
@@ -20,12 +26,13 @@ import {
   type ErrorCode,
   type FinishedBoard,
   type MutatingCommand,
+  type GameModeName,
   type RoomPhase,
   type VoteKind,
 } from '@bridge/shared';
 import { chooseCard } from './bot';
 
-export const ROOM_SCHEMA_VERSION = 3;
+export const ROOM_SCHEMA_VERSION = 4;
 export const MAX_MEMBERS = 4;
 export const MAX_PROCESSED_REQUESTS = 256;
 
@@ -55,6 +62,7 @@ export interface RoomState {
   readonly code: string;
   readonly hostUserId: string;
   readonly targetBoards: number;
+  readonly mode: GameModeName;
   readonly createdAt: string;
   readonly phase: RoomPhase;
   /** Monotonic; +1 per committed logical mutation. */
@@ -108,6 +116,7 @@ export interface RoomInit {
   readonly code: string;
   readonly host: Member;
   readonly targetBoards: number;
+  readonly mode?: GameModeName;
   readonly createdAt: string;
 }
 
@@ -121,6 +130,7 @@ export const createRoomState = (init: RoomInit): RoomState => ({
   code: init.code,
   hostUserId: init.host.userId,
   targetBoards: init.targetBoards,
+  mode: init.mode ?? 'CLASSIC',
   createdAt: init.createdAt,
   phase: 'WAITING',
   version: 1,
@@ -147,7 +157,9 @@ export const acknowledgeWrites = (state: RoomState, ids: ReadonlySet<string>): R
 export const migrateRoomState = (raw: unknown): RoomState => {
   const s = raw as Partial<RoomState> & { schemaVersion?: number };
   if (s.schemaVersion === ROOM_SCHEMA_VERSION) return s as RoomState;
-  const v3 = { botSeats: allFalse(), kicked: [], vote: null };
+  const v4 = { mode: 'CLASSIC' as const };
+  const v3 = { botSeats: allFalse(), kicked: [], vote: null, ...v4 };
+  if (s.schemaVersion === 3) return { ...(s as RoomState), ...v4, schemaVersion: ROOM_SCHEMA_VERSION };
   if (s.schemaVersion === 2) return { ...(s as RoomState), ...v3, schemaVersion: ROOM_SCHEMA_VERSION };
   if (s.schemaVersion === 1) return { ...(s as RoomState), ...v3, schemaVersion: ROOM_SCHEMA_VERSION, pendingWrites: [] };
   throw new Error(`Unsupported room schemaVersion ${String(s.schemaVersion)}`);
@@ -204,7 +216,7 @@ const ENGINE_ERROR_MAP: Readonly<Record<EngineErrorCode, ErrorCode>> = {
 
 const afterBoardChange = (state: RoomState, board: BoardState, deps: RoomDeps): RoomState => {
   if (board.phase !== 'COMPLETED' || board.result === null) {
-    return { ...state, board, phase: board.phase === 'PLAYING' ? 'PLAYING' : 'BIDDING' };
+    return { ...state, board, phase: board.phase === 'PLAYING' ? 'PLAYING' : board.phase === 'DECLARING' ? 'DECLARING' : 'BIDDING' };
   }
   const finished: FinishedBoard = {
     boardNumber: board.boardNumber,
@@ -230,6 +242,9 @@ const afterBoardChange = (state: RoomState, board: BoardState, deps: RoomDeps): 
     pendingWrites: [...state.pendingWrites, ...writes],
   };
 };
+
+const newBoard = (state: RoomState, n: number, deps: RoomDeps): BoardState =>
+  state.mode === 'MINI' ? createMiniBoard(n, deps.rng) : createBoard(n, deps.rng);
 
 export interface RoomDeps {
   readonly rng: RandomSource;
@@ -314,7 +329,7 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
       if (!SEATS.every((s) => state.seats[s]?.ready === true)) {
         return err('INVALID_PHASE', 'All four seats must be taken and ready.');
       }
-      const board = createBoard(1, deps.rng);
+      const board = newBoard(state, 1, deps);
       const matchId = deps.newId();
       const players = SEATS.map((s) => ({ seat: s, userId: state.seats[s]?.userId ?? '' }));
       const start: PendingWrite = {
@@ -326,7 +341,8 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
         at: deps.now(),
         players,
       };
-      return step({ ...state, matchId, board, phase: 'BIDDING', pendingWrites: [...state.pendingWrites, start] });
+      // A Mini Bridge 20–20 deal is passed out at once: record it like any finished board.
+      return step(afterBoardChange({ ...state, matchId, pendingWrites: [...state.pendingWrites, start] }, board, deps));
     }
     case 'room:leave': {
       if (state.phase !== 'WAITING') return err('INVALID_PHASE', 'You cannot leave a match in progress.');
@@ -368,6 +384,14 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
       if (!seat || !state.botSeats[seat]) return err('INVALID_PHASE', 'Your seat is not bot-controlled.');
       return step({ ...state, botSeats: { ...state.botSeats, [seat]: false } });
     }
+    case 'mini:declare': {
+      if (state.phase !== 'DECLARING' || !state.board) return err('INVALID_PHASE', 'No contract is being chosen.');
+      if (!seat) return err('FORBIDDEN', 'You are not seated.');
+      if (!actingSeat(state, userId)) return err('FORBIDDEN', 'A bot is playing your seat; take it back first.');
+      const r = boardDeclareMini(state.board, seat, cmd.payload.strain, cmd.payload.game);
+      if (!r.ok) return err(ENGINE_ERROR_MAP[r.error.code], r.error.message);
+      return step(afterBoardChange(state, r.value, deps));
+    }
     case 'auction:call': {
       if (state.phase !== 'BIDDING' || !state.board) return err('INVALID_PHASE', 'The auction is not in progress.');
       if (!seat) return err('FORBIDDEN', 'You are not seated.');
@@ -398,8 +422,8 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
       if (state.completedBoards.length >= state.targetBoards) {
         return step({ ...state, nextBoardReady, phase: 'MATCH_COMPLETED' });
       }
-      const board = createBoard(state.board.boardNumber + 1, deps.rng);
-      return step({ ...state, board, phase: 'BIDDING', nextBoardReady: null });
+      const board = newBoard(state, state.board.boardNumber + 1, deps);
+      return step(afterBoardChange({ ...state, nextBoardReady: null }, board, deps));
     }
   }
 };
@@ -491,10 +515,26 @@ export const applyBotStep = (state: RoomState, deps: RoomDeps): RoomState | null
   const controller = view.controller;
   if (!controller || !view.toAct || !state.botSeats[controller]) return null;
   if (state.phase === 'BIDDING') return actAs(controller, { ...ids, type: 'auction:call', payload: { kind: 'PASS' } });
+  if (state.phase === 'DECLARING') {
+    const choice = chooseMiniContract(board.deal[controller], board.deal[partnerOf(controller)]);
+    return actAs(controller, { ...ids, type: 'mini:declare', payload: choice });
+  }
   if (state.phase === 'PLAYING' && view.contract) {
     const own = projectBoardForSeat(board, controller);
     const card = chooseCard(view.toAct, own.legalCards, own.currentTrick?.cards ?? [], trumpOf(view.contract.strain));
     return actAs(controller, { ...ids, type: 'card:play', payload: { fromSeat: view.toAct, card } });
   }
   return null;
+};
+
+/**
+ * Bot contract choice in Mini Bridge, using only declarer's own hand and the
+ * face-up dummy: an 8+ card fit (major first) else NT; game with 25+ points.
+ */
+export const chooseMiniContract = (own: readonly Card[], dummy: readonly Card[]): { strain: Strain; game: boolean } => {
+  const both = [...own, ...dummy];
+  const len = (suit: 'C' | 'D' | 'H' | 'S') => both.filter((c) => c[1] === suit).length;
+  const fit = (['S', 'H', 'D', 'C'] as const).find((suit) => len(suit) >= 8) ?? null;
+  const points = handHcp(own) + handHcp(dummy);
+  return { strain: fit ?? 'NT', game: points >= 25 };
 };

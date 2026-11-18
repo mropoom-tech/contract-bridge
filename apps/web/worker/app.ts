@@ -174,6 +174,7 @@ export const createApp = () => {
       code,
       host: { userId: user.id, displayName: user.displayName },
       targetBoards: body.targetBoards,
+      mode: body.mode,
       createdAt: now,
     });
     return c.json({ code }, 201);

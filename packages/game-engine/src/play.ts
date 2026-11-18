@@ -39,7 +39,7 @@ export const controllingSeat = (play: PlayState): Seat | null => {
 
 /** Dummy is face-up once the opening lead has been made. */
 export const isDummyRevealed = (play: PlayState): boolean =>
-  play.completedTricks.length > 0 || play.currentTrick.cards.length > 0;
+  play.dummyFaceUp === true || play.completedTricks.length > 0 || play.currentTrick.cards.length > 0;
 
 export const trumpOf = (strain: Strain): Suit | null => (strain === 'NT' ? null : strain);
 

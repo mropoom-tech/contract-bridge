@@ -2,7 +2,7 @@
  * Seat-specific allowlisted projection of RoomState. This is the ONLY way room
  * data leaves the Durable Object; never serialize RoomState directly.
  */
-import { projectBoardForSeat, SEATS, type Seat } from '@bridge/game-engine';
+import { partnerOf, projectBoardForSeat, SEATS, type Seat } from '@bridge/game-engine';
 import {
   payloadFromCall,
   type AllowedActions,
@@ -24,6 +24,7 @@ const NO_ACTIONS: AllowedActions = {
   startVote: [],
   castVote: false,
   reclaim: false,
+  miniChoices: [],
 };
 
 export const projectRoomForUser = (
@@ -61,6 +62,8 @@ export const projectRoomForUser = (
     phase: state.phase,
     version: state.version,
     targetBoards: state.targetBoards,
+    mode: state.mode,
+    mini: view?.mini ? { hcp: view.mini.hcp, declarer: view.mini.declarer } : null,
     seats,
     lobby,
     boardNumber: view?.boardNumber ?? null,
@@ -70,7 +73,7 @@ export const projectRoomForUser = (
     controllerSeat: view?.controller ?? null,
     auctionHistory: view ? view.auction.map((e) => ({ seat: e.seat, call: payloadFromCall(e.call) })) : [],
     contract: view?.contract ?? null,
-    dummySeat: view?.contract?.dummy ?? null,
+    dummySeat: view?.contract?.dummy ?? (view?.mini?.declarer && state.phase === 'DECLARING' ? partnerOf(view.mini.declarer) : null),
     dummyCards: view?.dummyHand ?? null,
     cardCounts: view?.handCounts ?? null,
     currentTrick: view?.currentTrick?.cards ?? [],
@@ -117,9 +120,10 @@ export const projectRoomForUser = (
         !state.vote.yes.includes(userId) &&
         !state.vote.no.includes(userId),
       reclaim: seat !== null && state.botSeats[seat],
+      miniChoices: view ? view.miniChoices : [],
     };
     // A bot is playing your seat: no game actions until you take it back.
-    if (seat && state.botSeats[seat]) allowed = { ...allowed, calls: [], play: null, readyNext: false };
+    if (seat && state.botSeats[seat]) allowed = { ...allowed, calls: [], play: null, readyNext: false, miniChoices: [] };
   }
 
   return {

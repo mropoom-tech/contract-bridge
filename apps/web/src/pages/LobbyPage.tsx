@@ -14,6 +14,7 @@ const errorText = (e: unknown) =>
 export const LobbyPage = () => {
   const user = useSession((st) => st.user);
   const [boards, setBoards] = useState<number>(4);
+  const [mode, setMode] = useState<'CLASSIC' | 'MINI'>('CLASSIC');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState('');
@@ -24,7 +25,7 @@ export const LobbyPage = () => {
     setCreating(true);
     setCreateError(null);
     try {
-      const { code } = await api.createRoom(boards);
+      const { code } = await api.createRoom(boards, mode);
       navigate(`/room/${code}`);
     } catch (e) {
       setCreateError(errorText(e));
@@ -72,6 +73,26 @@ export const LobbyPage = () => {
                 <p className="text-sm text-ivory-200/70">{t.createRoomHint}</p>
               </div>
             </div>
+            <fieldset>
+              <legend className="mb-2 text-sm text-ivory-200">{t.mode.label}</legend>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup">
+                {(['CLASSIC', 'MINI'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m}
+                    onClick={() => setMode(m)}
+                    className={`rounded-xl border p-3 text-left transition ${
+                      mode === m ? 'border-gold-400 bg-gold-400/20 ring-1 ring-gold-400' : 'border-white/15 bg-black/25 hover:border-gold-400/60'
+                    }`}
+                  >
+                    <span className="block font-semibold">{t.mode[m]}</span>
+                    <span className="block text-xs text-ivory-200/70">{t.mode[`${m}_hint`]}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
             <fieldset className="space-y-2">
               <legend className="mb-2 text-sm text-ivory-200">{t.boardCount}</legend>
               <div className="grid grid-cols-5 gap-2" role="radiogroup">
@@ -93,7 +114,7 @@ export const LobbyPage = () => {
               <p className="text-xs text-ivory-200/65">{t.boardEstimate(boards)}</p>
             </fieldset>
             <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-black/30 px-3 py-1">{t.modeDuplicate}</span>
+              {mode === 'CLASSIC' && <span className="rounded-full bg-black/30 px-3 py-1">{t.modeDuplicate}</span>}
               <span className="rounded-full bg-black/30 px-3 py-1">{t.fourPlayers}</span>
             </div>
             <Button variant="primary" className="mt-auto w-full text-lg" onClick={() => void create()} busy={creating} disabled={creating}>

@@ -11,6 +11,7 @@ import type {
   Contract,
   PlayedCard,
   Seat,
+  Strain,
   Vulnerability,
 } from '@bridge/game-engine';
 
@@ -68,6 +69,13 @@ export const ClientCommandSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ ...mutating, type: z.literal('seat:reclaim'), payload: empty }).strict(),
+  z
+    .object({
+      ...mutating,
+      type: z.literal('mini:declare'),
+      payload: z.object({ strain: StrainSchema, game: z.boolean() }).strict(),
+    })
+    .strict(),
   z.object({ ...base, type: z.literal('state:requestSnapshot'), payload: empty }).strict(),
 ]);
 export type ClientCommand = z.infer<typeof ClientCommandSchema>;
@@ -101,7 +109,8 @@ export const ERROR_CODES = [
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
 /** Room lifecycle phases visible to clients. */
-export type RoomPhase = 'WAITING' | 'BIDDING' | 'PLAYING' | 'BOARD_RESULT' | 'MATCH_COMPLETED';
+export type RoomPhase = 'WAITING' | 'BIDDING' | 'DECLARING' | 'PLAYING' | 'BOARD_RESULT' | 'MATCH_COMPLETED';
+export type GameModeName = 'CLASSIC' | 'MINI';
 
 export interface SeatOccupant {
   readonly displayName: string;
@@ -128,6 +137,9 @@ export interface PublicViewState {
   readonly phase: RoomPhase;
   readonly version: number;
   readonly targetBoards: number;
+  readonly mode: GameModeName;
+  /** Mini Bridge: announced high-card points and declarer (null for classic). */
+  readonly mini: { readonly hcp: Readonly<Record<Seat, number>>; readonly declarer: Seat | null } | null;
   readonly seats: Readonly<Record<Seat, SeatOccupant | null>>;
   /** Joined members without a seat. */
   readonly lobby: readonly LobbyMember[];
@@ -183,6 +195,8 @@ export interface AllowedActions {
   readonly castVote: boolean;
   /** Your seat is bot-controlled and you may take it back. */
   readonly reclaim: boolean;
+  /** Mini Bridge: contract choices when you are the declarer choosing now. */
+  readonly miniChoices: readonly { readonly strain: Strain; readonly game: boolean }[];
 }
 
 export interface SeatSpecificSnapshot {
