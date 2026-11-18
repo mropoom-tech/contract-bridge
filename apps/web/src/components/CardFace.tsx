@@ -4,7 +4,7 @@ import { cardLabel, cardRank, cardSuit, isRed, RANK_DISPLAY, SUIT_SYMBOL } from 
 type Size = 'sm' | 'md' | 'lg';
 
 const SIZES: Record<Size, string> = {
-  sm: 'w-10 h-14 text-sm',
+  sm: 'w-8 h-12 text-xs sm:w-10 sm:h-14 sm:text-sm',
   md: 'w-12 h-[4.25rem] text-base',
   lg: 'w-14 h-20 sm:w-16 sm:h-24 text-lg sm:text-xl',
 };

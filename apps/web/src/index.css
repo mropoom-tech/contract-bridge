@@ -86,3 +86,25 @@ body {
     }
   }
 }
+
+/* Seat that must act now: soft gold glow (static when reduced motion is requested). */
+.seat-active {
+  box-shadow: 0 0 0 3px rgb(220 192 122 / 0.35), 0 0 18px rgb(220 192 122 / 0.55);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .seat-active {
+    animation: seat-glow 1.6s ease-in-out infinite;
+  }
+  .your-turn {
+    animation: seat-glow 1.6s ease-in-out infinite;
+  }
+  @keyframes seat-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 2px rgb(220 192 122 / 0.3), 0 0 10px rgb(220 192 122 / 0.35);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgb(220 192 122 / 0.45), 0 0 24px rgb(220 192 122 / 0.7);
+    }
+  }
+}

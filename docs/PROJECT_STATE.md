@@ -287,3 +287,18 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
   - Full e2e 11/11. Unit web 70, engine 125 (branches 92.09%), shared 5. typecheck/lint clean. Build OK.
   - Browser screenshot of the duplicate waiting room.
 - Limits: 2 tables / 1 team match only (no multi-team movements or matchpoint pairs). Board results are compared in memory via the DOs, with no D1 event table yet.
+
+## Game table redesign + "how to win" lesson (2026-11-18)
+
+- `GameTable.tsx`:
+  - Compact info bar: board, dealer, Vul as NS/EW pills (red when vulnerable), contract badge, trick counts, and a 13-pip progress bar marking the declarer's target.
+  - "Your turn" pill pulses; seat badges show a team-coloured avatar, online dot, Dealer/Declarer/Dummy/Bot chips, and a gold glow on the seat that must act.
+  - Round center "compass" with seat letters, the contract when no trick is showing, and an arrow + name for who acts. The winning card of the last trick is ringed.
+  - Your hand is grouped by suit with gaps, and is ringed in gold when you must play (dummy too when you play from it). There is a hint line on how to select/play.
+  - The bidding box is highlighted when it's your bid. Hidden hands show a count badge.
+  - `.seat-active` / `.your-turn` glow respects prefers-reduced-motion.
+- Phone: smaller trick circle, seat badges and small cards below `sm`; measured no horizontal overflow at 375px (page 375, table 342).
+- Tutorial: new lesson 2 "แพ้ชนะอย่างไร และเกมจบเมื่อไหร่".
+  - Covers the board objective (6 + level tricks; defenders win by defeating the contract), when a board ends (13 tricks or 4 passes), and how each mode ends and is decided (Contract/Mini total points, Rubber first to 2 games + bonus then total points, Duplicate teams total IMPs).
+  - 3 exercises, pinned in `lessons.test.ts`.
+- Browser: desktop screenshots of the table during the auction result and a trick in progress. Phone checked by measurement; the hidden pane rendered phone screenshots at the wrong scale.

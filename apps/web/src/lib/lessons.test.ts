@@ -34,6 +34,14 @@ describe('tutorial answer keys agree with the engine and the written explanation
     expect(b && legalBidOptions(b)).toEqual([0, 3, 4]);
   });
 
+  it('winning lesson: tricks needed = 6 + level', () => {
+    const w = LESSONS.find((l) => l.id === 'winning');
+    const [a, b] = (w?.exercises ?? []).filter((e) => e.kind === 'choice');
+    expect(a?.kind === 'choice' && a.options[a.answer]).toBe(`${6 + 3} กอง`);
+    // 4♥ needs 10; 8 made → defeated → defenders score
+    expect(b?.kind === 'choice' && b.options[b.answer]).toBe('ฝ่ายป้องกัน');
+  });
+
   it('scores', () => {
     expect(of('score').map(expectedScore)).toEqual([420, 110, -200]);
   });

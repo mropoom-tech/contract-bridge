@@ -107,6 +107,15 @@ export const th = {
   undertricks: 'ค่าปรับ Undertrick',
   total: 'รวม',
   learnNav: 'บทสอนเล่น',
+  table: {
+    acting: 'กำลังเล่น',
+    by: 'โดย',
+    noContract: 'ยังไม่มีสัญญา',
+    progress: (got: number, need: number) => `Declarer ได้ ${got}/${need} กอง`,
+    yourBid: 'ถึงตาคุณประมูล',
+    yourCard: 'ถึงตาคุณลงไพ่',
+    hintSelect: 'แตะไพ่ที่สว่างเพื่อเลือก แล้วแตะซ้ำหรือกดปุ่มเพื่อลงไพ่',
+  },
   dup: {
     title: 'Duplicate แบบทีม (IMPs)',
     team: 'ทีม',
