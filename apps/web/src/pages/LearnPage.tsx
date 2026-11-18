@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { scoreBreakdown, type Call, type Card, type DoubleStatus, type Seat } from '@bridge/game-engine';
 import { CardFace } from '../components/CardFace';
+import { ScoreCalculator } from '../components/ScoreCalculator';
 import { Button, Panel } from '../components/ui';
 import { t } from '../i18n/th';
 import { callText } from '../lib/cards';
@@ -341,147 +342,238 @@ export const LessonPage = ({ id }: { id: string }) => {
 
 // ---------- scoring reference (all figures computed by the engine) ----------
 
-const total = (level: 1 | 2 | 3 | 4 | 5 | 6 | 7, strain: 'C' | 'D' | 'H' | 'S' | 'NT', doubled: DoubleStatus, vul: boolean, tricks: number) =>
+type Lv = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+const total = (level: Lv, strain: 'C' | 'D' | 'H' | 'S' | 'NT', doubled: DoubleStatus, vul: boolean, tricks: number) =>
   scoreBreakdown({ level, strain, doubled }, vul, tricks).total;
+const isGame = (level: Lv, strain: 'C' | 'H' | 'NT') => scoreBreakdown({ level, strain, doubled: 0 }, false, 6 + level).gameBonus > 0;
 
-const Th = ({ children }: { children: React.ReactNode }) => <th className="border-b border-white/15 px-2 py-1.5 text-left font-semibold text-gold-300">{children}</th>;
-const Td = ({ children, strong = false }: { children: React.ReactNode; strong?: boolean }) => (
-  <td className={`border-b border-white/5 px-2 py-1.5 tabular-nums ${strong ? 'font-semibold' : ''}`}>{children}</td>
+const Th = ({ children, className = '', colSpan }: { children?: React.ReactNode; className?: string; colSpan?: number }) => (
+  <th colSpan={colSpan} className={`px-2 py-2 text-center text-xs font-semibold sm:text-sm ${className}`}>
+    {children}
+  </th>
+);
+const Td = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
+  <td className={`px-2 py-2 text-center tabular-nums ${className}`}>{children}</td>
 );
 
+const Section = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => (
+  <section id={id} className="scroll-mt-20 space-y-3">
+    <h2 className="text-xl font-bold text-gold-300">{title}</h2>
+    {children}
+  </section>
+);
+
+const NAV = [
+  ['calc', '🧮 เครื่องคิดเลข'],
+  ['steps', '① วิธีคิด 3 ขั้น'],
+  ['tricks', '② คะแนนต่อกอง'],
+  ['bonus', '③ โบนัส'],
+  ['made', '④ ตารางเมื่อทำได้'],
+  ['down', '⑤ ค่าปรับ'],
+] as const;
+
 export const ScoringReferencePage = () => {
-  const levels = [1, 2, 3, 4, 5, 6, 7] as const;
+  const levels: readonly Lv[] = [1, 2, 3, 4, 5, 6, 7];
   const downs = [1, 2, 3, 4, 5, 6] as const;
-  const strains = [
-    ['C', '♣ / ♦'],
-    ['H', '♥ / ♠'],
+  const groups = [
+    ['C', '♣ ♦'],
+    ['H', '♥ ♠'],
     ['NT', 'NT'],
   ] as const;
   return (
     <AppShell wide>
-      <div className="space-y-6">
-        <Link to="/learn" className="text-sm text-gold-300 hover:underline">
-          ← {t.learn.backToLessons}
-        </Link>
-        <header className="space-y-2">
+      <div className="mx-auto max-w-5xl space-y-8">
+        <div className="space-y-2">
+          <Link to="/learn" className="text-sm text-gold-300 hover:underline">
+            ← {t.learn.backToLessons}
+          </Link>
           <h1 className="text-3xl font-bold">{t.learn.scoringRef}</h1>
           <p className="text-ivory-200/80">{t.learn.scoringRefIntro}</p>
-        </header>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Panel title={t.learn.refTrickValues}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <Th>{t.learn.refStrain}</Th>
-                  <Th>{t.learn.refPerTrick}</Th>
-                  <Th>Double</Th>
-                  <Th>Redouble</Th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <Td>♣ ♦</Td>
-                  <Td>20</Td>
-                  <Td>40</Td>
-                  <Td>80</Td>
-                </tr>
-                <tr>
-                  <Td>♥ ♠</Td>
-                  <Td>30</Td>
-                  <Td>60</Td>
-                  <Td>120</Td>
-                </tr>
-                <tr>
-                  <Td>NT</Td>
-                  <Td>{t.learn.refNtValue}</Td>
-                  <Td>80 / 60</Td>
-                  <Td>160 / 120</Td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="mt-2 text-xs text-ivory-200/70">{t.learn.refTrickNote}</p>
-          </Panel>
-
-          <Panel title={t.learn.refBonuses}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <Th>{t.learn.refItem}</Th>
-                  <Th>Non-vul</Th>
-                  <Th>Vul</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {t.learn.refBonusRows.map(([k, a, b]) => (
-                  <tr key={k}>
-                    <Td>{k}</Td>
-                    <Td>{a}</Td>
-                    <Td>{b}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Panel>
+          <nav aria-label="สารบัญ" className="flex flex-wrap gap-2 pt-1">
+            {NAV.map(([id, label]) => (
+              <a key={id} href={`#${id}`} className="rounded-full border border-white/15 bg-black/25 px-3 py-1 text-sm hover:border-gold-400">
+                {label}
+              </a>
+            ))}
+          </nav>
         </div>
 
-        <Panel title={t.learn.refMadeTable}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] text-sm">
-              <thead>
+        <div id="calc" className="scroll-mt-20">
+          <ScoreCalculator />
+        </div>
+
+        <Section id="steps" title="① วิธีคิดคะแนน 3 ขั้น">
+          <ol className="grid gap-3 md:grid-cols-3">
+            {[
+              ['1', 'คะแนนสัญญา', 'ล่างเส้น', 'นับเฉพาะกองที่ประมูลไว้ (เกิน 6 กอง) ตามค่าของดอก — ถ้ารวมได้ 100 ขึ้นไปคือ "Game"', 'border-sky-400/50'],
+              ['2', 'โบนัส', 'บนเส้น', 'Game หรือ Partscore, Slam, Overtrick และโบนัสเมื่อทำได้ทั้งที่ถูก Double', 'border-emerald-400/50'],
+              ['3', 'ถ้าทำไม่ได้', 'ค่าปรับ', 'ไม่ได้คะแนนสัญญาเลย ฝ่ายป้องกันได้คะแนนตามจำนวนกองที่ขาด', 'border-red-400/50'],
+            ].map(([n, title, tag, body, border]) => (
+              <li key={n} className={`rounded-xl border-l-4 bg-charcoal-900/85 p-4 ${border}`}>
+                <div className="flex items-center gap-2">
+                  <span className="grid size-7 place-items-center rounded-full bg-white/15 text-sm font-bold">{n}</span>
+                  <h3 className="font-semibold">{title}</h3>
+                  <span className="ml-auto rounded-full bg-black/30 px-2 text-xs text-ivory-200/80">{tag}</span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-ivory-200/85">{body}</p>
+              </li>
+            ))}
+          </ol>
+          <Panel>
+            <p className="text-sm">
+              <strong className="text-gold-300">ตัวอย่าง:</strong> 4♥ ไม่ Vul ทำได้พอดี 10 กอง → คะแนนสัญญา 4 × 30 = <strong>120</strong> (ถึง 100 = Game)
+              + โบนัส Game <strong>300</strong> = <strong className="text-emerald-300">420</strong>
+            </p>
+          </Panel>
+        </Section>
+
+        <Section id="tricks" title="② คะแนนต่อกอง (ล่างเส้น)">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['♣ ♦', 'Minor', '20', 'ต่อกอง', 'Game ที่ระดับ 5 (5 × 20 = 100)'],
+              ['♥ ♠', 'Major', '30', 'ต่อกอง', 'Game ที่ระดับ 4 (4 × 30 = 120)'],
+              ['NT', 'No Trump', '40 / 30', 'กองแรก / กองต่อไป', 'Game ที่ระดับ 3 (40 + 30 + 30 = 100)'],
+            ].map(([sym, name, val, unit, game]) => (
+              <div key={name} className="rounded-xl border border-white/10 bg-charcoal-900/85 p-4 text-center">
+                <div className="text-2xl">
+                  {sym.split(' ').map((x) => (
+                    <span key={x} className={x === '♦' || x === '♥' ? 'text-red-400' : ''}>
+                      {x}{' '}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-xs text-ivory-200/60">{name}</div>
+                <div className="mt-2 text-3xl font-bold text-gold-300">{val}</div>
+                <div className="text-xs text-ivory-200/70">{unit}</div>
+                <div className="mt-2 rounded-md bg-black/30 px-2 py-1 text-xs">{game}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-ivory-200/75">ถูก Double คะแนนสัญญา ×2 · Redouble ×4 (เช่น 2♠X = 2 × 30 × 2 = 120 → กลายเป็น Game)</p>
+        </Section>
+
+        <Section id="bonus" title="③ โบนัส (บนเส้น)">
+          <div className="overflow-x-auto rounded-xl border border-white/10 bg-charcoal-900/85">
+            <table className="w-full min-w-[22rem] text-sm">
+              <thead className="bg-black/30">
+                <tr>
+                  <Th className="text-left">{t.learn.refItem}</Th>
+                  <Th>ไม่ Vul</Th>
+                  <Th className="text-red-300">Vul</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {t.learn.refBonusRows.map(([k, a, b]) => (
+                  <tr key={k} className="hover:bg-white/5">
+                    <Td className="text-left">{k}</Td>
+                    <Td className="font-semibold">{a}</Td>
+                    <Td className="font-semibold text-red-200">{b}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        <Section id="made" title="④ คะแนนรวมเมื่อทำได้พอดีสัญญา (ไม่ Double)">
+          <div className="flex flex-wrap gap-3 text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded bg-white/10" /> Partscore
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded bg-gold-400/40" /> Game
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded bg-emerald-500/40" /> Slam
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-white/10 bg-charcoal-900/85">
+            <table className="w-full min-w-[34rem] text-sm">
+              <thead className="bg-black/30">
+                <tr>
+                  <Th />
+                  <Th colSpan={3} className="border-l border-white/10">
+                    ไม่ Vul
+                  </Th>
+                  <Th colSpan={3} className="border-l border-white/10 text-red-300">
+                    Vul
+                  </Th>
+                </tr>
                 <tr>
                   <Th>{t.learn.refLevel}</Th>
-                  {strains.map(([, label]) => (
-                    <Th key={label}>{label} Non-vul</Th>
-                  ))}
-                  {strains.map(([, label]) => (
-                    <Th key={`v${label}`}>{label} Vul</Th>
-                  ))}
+                  {[false, true].flatMap((vul) =>
+                    groups.map(([s, label], i) => (
+                      <Th key={`${vul}${s}`} className={i === 0 ? 'border-l border-white/10' : ''}>
+                        {label}
+                      </Th>
+                    )),
+                  )}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-white/5">
                 {levels.map((lv) => (
                   <tr key={lv}>
-                    <Td strong>{lv}</Td>
+                    <Td className="font-bold">{lv}</Td>
                     {[false, true].flatMap((vul) =>
-                      strains.map(([s]) => <Td key={`${vul}${s}`}>{total(lv, s, 0, vul, 6 + lv)}</Td>),
+                      groups.map(([s], i) => {
+                        const tone = lv >= 6 ? 'bg-emerald-500/25' : isGame(lv, s) ? 'bg-gold-400/25 font-semibold' : '';
+                        return (
+                          <Td key={`${vul}${s}`} className={`${tone} ${i === 0 ? 'border-l border-white/10' : ''}`}>
+                            {total(lv, s, 0, vul, 6 + lv)}
+                          </Td>
+                        );
+                      }),
                     )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs text-ivory-200/70">{t.learn.refMadeNote}</p>
-        </Panel>
+          <p className="text-xs text-ivory-200/70">{t.learn.refMadeNote}</p>
+        </Section>
 
-        <Panel title={t.learn.refPenaltyTable}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] text-sm">
-              <thead>
+        <Section id="down" title="⑤ ค่าปรับเมื่อทำไม่ได้ (ฝ่ายป้องกันได้)">
+          <div className="overflow-x-auto rounded-xl border border-white/10 bg-charcoal-900/85">
+            <table className="w-full min-w-[30rem] text-sm">
+              <thead className="bg-black/30">
+                <tr>
+                  <Th />
+                  <Th colSpan={3} className="border-l border-white/10">
+                    ไม่ Vul
+                  </Th>
+                  <Th colSpan={3} className="border-l border-white/10 text-red-300">
+                    Vul
+                  </Th>
+                </tr>
                 <tr>
                   <Th>{t.learn.refDown}</Th>
-                  <Th>Non-vul</Th>
-                  <Th>Non-vul X</Th>
-                  <Th>Non-vul XX</Th>
-                  <Th>Vul</Th>
-                  <Th>Vul X</Th>
-                  <Th>Vul XX</Th>
+                  {[false, true].flatMap((vul) =>
+                    ['ปกติ', 'X', 'XX'].map((h, i) => (
+                      <Th key={`${vul}${h}`} className={i === 0 ? 'border-l border-white/10' : ''}>
+                        {h}
+                      </Th>
+                    )),
+                  )}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-white/5">
                 {downs.map((d) => (
                   <tr key={d}>
-                    <Td strong>{d}</Td>
+                    <Td className="font-bold">−{d}</Td>
                     {[false, true].flatMap((vul) =>
-                      ([0, 1, 2] as const).map((dbl) => <Td key={`${vul}${dbl}`}>{-total(7, 'NT', dbl, vul, 13 - d)}</Td>),
+                      ([0, 1, 2] as const).map((dbl) => (
+                        <Td key={`${vul}${dbl}`} className={dbl === 0 ? 'border-l border-white/10' : ''}>
+                          {-total(7, 'NT', dbl, vul, 13 - d)}
+                        </Td>
+                      )),
                     )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs text-ivory-200/70">{t.learn.refPenaltyNote}</p>
-        </Panel>
+          <p className="text-xs text-ivory-200/70">{t.learn.refPenaltyNote}</p>
+        </Section>
 
         <Panel title={t.learn.refLines}>
           <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed">

@@ -148,6 +148,9 @@ export const LobbyPage = () => {
             <Button variant="ghost" onClick={() => navigate('/learn/scoring')}>
               📊 {t.learn.scoringRef}
             </Button>
+            <Button variant="ghost" onClick={() => navigate('/learn/scoring#calc')}>
+              🧮 {t.calcNav}
+            </Button>
           </div>
         </Panel>
       </div>

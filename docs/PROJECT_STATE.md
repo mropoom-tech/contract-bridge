@@ -205,3 +205,22 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
 - Production per-IP guest limit (10/min) observed working (429 during repeated test runs).
 - Local: e2e 10/10, typecheck/lint clean.
 - GitHub push of these commits is pending: it needs the owner's GitHub sign-in on this machine.
+
+## Scoring page redesign + calculator (2026-11-18)
+
+- `/learn/scoring` redesigned:
+  - Jump-nav chips.
+  - 3-step "how a score is built" cards with a worked 4♥ example.
+  - Trick-value cards with the game level per strain.
+  - Bonus table with a red Vul column.
+  - Made-contract table with grouped Non-vul / Vul headers; Game cells gold, Slam cells green, with a legend.
+  - Penalty table grouped Non-vul / Vul × undoubled / X / XX.
+- New `components/ScoreCalculator.tsx` for scoring over-the-table boards.
+  - Inputs: level, strain, X/XX, declarer-side vulnerability, declarer, tricks (slider plus quick −3..+3 buttons).
+  - Output: NS/EW score and each item tagged above/below the line with its formula (`explainScore`, engine-backed).
+  - Linked from the lobby (`/learn/scoring#calc`).
+- Browser checks:
+  - 4♥ S non-vul made = NS +420.
+  - 3NTX E vul −2 = NS +500 (200 + 300).
+  - No horizontal overflow at 375px.
+  - typecheck/lint clean, unit tests pass, build OK.
