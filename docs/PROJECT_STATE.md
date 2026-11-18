@@ -247,3 +247,23 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
   - Human declarer on board 6: chooser shown, 1NT chosen, W led, play continued from dummy.
 - Checks: typecheck/lint clean. Unit web 65, engine 97 (branches 93.26%), shared 5. e2e 10/10. Build OK.
 - Dev note: another local app was occupying port 5173, so `.claude/launch.json` gained `web-5174`. The e2e and bot scripts take `E2E_BASE_URL`.
+
+## Rubber Bridge mode (2026-11-18)
+
+- Engine `packages/game-engine/src/rubber.ts`:
+  - Contract trick points go below the line toward game (100). A game resets both sides' part-scores.
+  - Above the line: overtricks, slam, the bonus for making a doubled/redoubled contract, undertrick penalties (to the defenders) and honors. Honors count for whoever holds them, defenders included: 4 trump honors 100, 5 = 150, four aces at NT 150.
+  - Vulnerability comes from games won. The first side to two games wins: +700 for 2–0, +500 for 2–1. Passed-out deals are not scored.
+  - Values shared with duplicate come from `scoreBreakdown`; there is no per-deal game/part-score bonus.
+  - `test/rubber.test.ts` (8 tests).
+- Room schema v5 adds `rubber: RubberState | null`; mode `RUBBER` = one rubber.
+  - The dealer rotates by deal number; board vulnerability comes from the rubber.
+  - Each finished deal stores its rubber score in `FinishedBoard.rubber`. Its `nsScore` is the deal's NS−EW change, and the final deal includes the rubber bonus, so D1 board rows sum to the sheet.
+  - The match ends when the rubber has a winner (MATCH_END outbox write).
+  - `worker/room/rubber-room.test.ts`: plays deals until the rubber ends; checks vulnerability per deal, dealer rotation, the 500/700 bonus, that board sums equal the sheet totals, and the MATCH_END write.
+- UI:
+  - Lobby mode picker: Contract / Mini / Rubber (board count hidden for Rubber); waiting room shows "1 Rubber".
+  - `RubberSheet`: NS | EW columns, games won with Vul badge, above-line items with labels, below-line contract points per game, totals, points still needed for game, winner line.
+  - The result dialog shows the deal's rubber breakdown and a rules summary instead of the duplicate breakdown.
+- Browser (local 5174, 1 human + 3 dev bots): three deals scored correctly on the sheet (1NT −3 → EW 150 above; 1NT +2 → NS 40 below + 60 above; EW 200 penalty; totals 100 / 350; "NS needs 60").
+- Checks: typecheck/lint clean. Unit web 66, engine 105 (branches 92.43%), shared 5. e2e 10/10. Build OK.

@@ -152,7 +152,7 @@ export const WaitingRoom = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) =>
           <div className="felt col-start-2 row-start-2 grid min-h-28 place-items-center rounded-2xl border border-black/40 text-center shadow-inner">
             <div>
               <div className="text-2xl" aria-hidden="true">♠♥♦♣</div>
-              <div className="text-xs text-ivory-200/80">{t.boardsInMatch(pub.targetBoards)}</div>
+              <div className="text-xs text-ivory-200/80">{pub.mode === 'RUBBER' ? t.mode.oneRubber : t.boardsInMatch(pub.targetBoards)}</div>
               <div className="mt-1 rounded-full bg-black/30 px-2 text-[11px] font-semibold text-gold-300">{t.mode[pub.mode]}</div>
             </div>
           </div>

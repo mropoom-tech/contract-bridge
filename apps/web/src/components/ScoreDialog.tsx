@@ -5,6 +5,7 @@ import { t } from '../i18n/th';
 import { contractText } from '../lib/cards';
 import { explainScore, type ScoreItem } from '../lib/score-explain';
 import { NsEwScore } from './ResultPanel';
+import { RubberDealView } from './RubberSheet';
 import { Button } from './ui';
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
@@ -165,7 +166,15 @@ export const ScoreDialog = ({ board, open, onClose }: { board: FinishedBoard; op
             ×
           </button>
         </div>
-        <ScoreBreakdownView board={board} />
+        {board.rubber ? (
+          <div className="space-y-2">
+            <h3 className="font-semibold text-gold-300">{t.rubber.dealTitle}</h3>
+            <RubberDealView score={board.rubber} />
+            <p className="text-xs text-ivory-200/70">{t.rubber.rules}</p>
+          </div>
+        ) : (
+          <ScoreBreakdownView board={board} />
+        )}
         <NsEwScore ns={board.result.nsScore} />
         <Button variant="primary" className="w-full" onClick={onClose}>
           {t.close}

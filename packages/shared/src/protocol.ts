@@ -10,6 +10,8 @@ import type {
   CompletedTrick,
   Contract,
   PlayedCard,
+  RubberDealScore,
+  RubberState,
   Seat,
   Strain,
   Vulnerability,
@@ -110,7 +112,7 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 
 /** Room lifecycle phases visible to clients. */
 export type RoomPhase = 'WAITING' | 'BIDDING' | 'DECLARING' | 'PLAYING' | 'BOARD_RESULT' | 'MATCH_COMPLETED';
-export type GameModeName = 'CLASSIC' | 'MINI';
+export type GameModeName = 'CLASSIC' | 'MINI' | 'RUBBER';
 
 export interface SeatOccupant {
   readonly displayName: string;
@@ -130,6 +132,8 @@ export interface FinishedBoard {
   readonly dealer: Seat;
   readonly vulnerability: Vulnerability;
   readonly result: BoardResult;
+  /** Rubber mode: how this deal was scored (nsScore is then the deal's NS−EW change). */
+  readonly rubber?: RubberDealScore;
 }
 
 export interface PublicViewState {
@@ -138,6 +142,8 @@ export interface PublicViewState {
   readonly version: number;
   readonly targetBoards: number;
   readonly mode: GameModeName;
+  /** Rubber mode: the full score sheet (public information). */
+  readonly rubber: RubberState | null;
   /** Mini Bridge: announced high-card points and declarer (null for classic). */
   readonly mini: { readonly hcp: Readonly<Record<Seat, number>>; readonly declarer: Seat | null } | null;
   readonly seats: Readonly<Record<Seat, SeatOccupant | null>>;

@@ -83,7 +83,7 @@ export type BoardResult =
 /** DECLARING: Mini Bridge only — declarer is choosing the contract (no auction). */
 export type BoardPhase = 'BIDDING' | 'DECLARING' | 'PLAYING' | 'COMPLETED';
 
-export type GameMode = 'CLASSIC' | 'MINI';
+export type GameMode = 'CLASSIC' | 'MINI' | 'RUBBER';
 
 /** Public Mini Bridge facts: every player's high-card points are announced. */
 export interface MiniInfo {

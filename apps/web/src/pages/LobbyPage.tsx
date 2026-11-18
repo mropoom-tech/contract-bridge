@@ -14,7 +14,7 @@ const errorText = (e: unknown) =>
 export const LobbyPage = () => {
   const user = useSession((st) => st.user);
   const [boards, setBoards] = useState<number>(4);
-  const [mode, setMode] = useState<'CLASSIC' | 'MINI'>('CLASSIC');
+  const [mode, setMode] = useState<'CLASSIC' | 'MINI' | 'RUBBER'>('CLASSIC');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState('');
@@ -75,8 +75,8 @@ export const LobbyPage = () => {
             </div>
             <fieldset>
               <legend className="mb-2 text-sm text-ivory-200">{t.mode.label}</legend>
-              <div className="grid grid-cols-2 gap-2" role="radiogroup">
-                {(['CLASSIC', 'MINI'] as const).map((m) => (
+              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
+                {(['CLASSIC', 'MINI', 'RUBBER'] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -93,6 +93,9 @@ export const LobbyPage = () => {
                 ))}
               </div>
             </fieldset>
+            {mode === 'RUBBER' ? (
+              <p className="rounded-lg bg-black/25 px-3 py-2 text-sm">{t.mode.oneRubber}</p>
+            ) : (
             <fieldset className="space-y-2">
               <legend className="mb-2 text-sm text-ivory-200">{t.boardCount}</legend>
               <div className="grid grid-cols-5 gap-2" role="radiogroup">
@@ -113,6 +116,7 @@ export const LobbyPage = () => {
               </div>
               <p className="text-xs text-ivory-200/65">{t.boardEstimate(boards)}</p>
             </fieldset>
+            )}
             <div className="flex flex-wrap gap-2 text-xs">
               {mode === 'CLASSIC' && <span className="rounded-full bg-black/30 px-3 py-1">{t.modeDuplicate}</span>}
               <span className="rounded-full bg-black/30 px-3 py-1">{t.fourPlayers}</span>

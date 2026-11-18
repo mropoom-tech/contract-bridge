@@ -14,7 +14,7 @@ export const GuestLoginRequestSchema = z.object({ displayName: DisplayNameSchema
 export const CreateRoomRequestSchema = z
   .object({
     targetBoards: z.number().int().min(1).max(16).default(4),
-    mode: z.enum(['CLASSIC', 'MINI']).default('CLASSIC'),
+    mode: z.enum(['CLASSIC', 'MINI', 'RUBBER']).default('CLASSIC'),
   })
   .strict();
 
@@ -30,7 +30,7 @@ export interface RoomSummary {
   readonly code: string;
   readonly phase: string;
   readonly targetBoards: number;
-  readonly mode: 'CLASSIC' | 'MINI';
+  readonly mode: 'CLASSIC' | 'MINI' | 'RUBBER';
   readonly memberCount: number;
   readonly seatsTaken: number;
   readonly isMember: boolean;

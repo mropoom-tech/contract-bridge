@@ -113,7 +113,8 @@ describe('votes', () => {
   it('migrates v2 snapshots', () => {
     const { botSeats: _b, kicked: _k, vote: _v, ...v2 } = started();
     const m = migrateRoomState({ ...v2, schemaVersion: 2 });
-    expect(m.schemaVersion).toBe(4);
+    expect(m.schemaVersion).toBe(5);
+    expect(m.rubber).toBeNull();
     expect(m.mode).toBe('CLASSIC');
     expect(m.botSeats).toEqual({ N: false, E: false, S: false, W: false });
   });

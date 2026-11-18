@@ -4,6 +4,7 @@ import type { FinishedBoard, PublicViewState } from '@bridge/shared';
 import { t } from '../i18n/th';
 import { contractText } from '../lib/cards';
 import { ScoreDialog } from './ScoreDialog';
+import { RubberSheet } from './RubberSheet';
 import { Button } from './ui';
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
@@ -89,7 +90,7 @@ export const ResultPanel = ({
           setReopened(false);
         }}
       />
-      <Scoreboard boards={pub.completedBoards} />
+      {pub.rubber ? <RubberSheet rubber={pub.rubber} /> : <Scoreboard boards={pub.completedBoards} />}
       {done && <NsEwScore ns={pub.totalNsScore} />}
       {!done && pub.nextBoardReady && (
         <div className="space-y-2">

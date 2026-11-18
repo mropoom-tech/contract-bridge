@@ -8,7 +8,12 @@ import {
   boardPlay,
   createBoard,
   createMiniBoard,
+  createRubber,
+  applyRubberDeal,
   handHcp,
+  rubberDealNsDelta,
+  rubberVulnerability,
+  type RubberState,
   partnerOf,
   projectBoardForSeat,
   seatToPlay,
@@ -32,7 +37,7 @@ import {
 } from '@bridge/shared';
 import { chooseCard } from './bot';
 
-export const ROOM_SCHEMA_VERSION = 4;
+export const ROOM_SCHEMA_VERSION = 5;
 export const MAX_MEMBERS = 4;
 export const MAX_PROCESSED_REQUESTS = 256;
 
@@ -63,6 +68,8 @@ export interface RoomState {
   readonly hostUserId: string;
   readonly targetBoards: number;
   readonly mode: GameModeName;
+  /** Rubber mode score sheet; null for other modes. */
+  readonly rubber: RubberState | null;
   readonly createdAt: string;
   readonly phase: RoomPhase;
   /** Monotonic; +1 per committed logical mutation. */
@@ -131,6 +138,7 @@ export const createRoomState = (init: RoomInit): RoomState => ({
   hostUserId: init.host.userId,
   targetBoards: init.targetBoards,
   mode: init.mode ?? 'CLASSIC',
+  rubber: init.mode === 'RUBBER' ? createRubber() : null,
   createdAt: init.createdAt,
   phase: 'WAITING',
   version: 1,
@@ -157,8 +165,10 @@ export const acknowledgeWrites = (state: RoomState, ids: ReadonlySet<string>): R
 export const migrateRoomState = (raw: unknown): RoomState => {
   const s = raw as Partial<RoomState> & { schemaVersion?: number };
   if (s.schemaVersion === ROOM_SCHEMA_VERSION) return s as RoomState;
-  const v4 = { mode: 'CLASSIC' as const };
+  const v5 = { rubber: null };
+  const v4 = { mode: 'CLASSIC' as const, ...v5 };
   const v3 = { botSeats: allFalse(), kicked: [], vote: null, ...v4 };
+  if (s.schemaVersion === 4) return { ...(s as RoomState), ...v5, schemaVersion: ROOM_SCHEMA_VERSION };
   if (s.schemaVersion === 3) return { ...(s as RoomState), ...v4, schemaVersion: ROOM_SCHEMA_VERSION };
   if (s.schemaVersion === 2) return { ...(s as RoomState), ...v3, schemaVersion: ROOM_SCHEMA_VERSION };
   if (s.schemaVersion === 1) return { ...(s as RoomState), ...v3, schemaVersion: ROOM_SCHEMA_VERSION, pendingWrites: [] };
@@ -218,18 +228,33 @@ const afterBoardChange = (state: RoomState, board: BoardState, deps: RoomDeps): 
   if (board.phase !== 'COMPLETED' || board.result === null) {
     return { ...state, board, phase: board.phase === 'PLAYING' ? 'PLAYING' : board.phase === 'DECLARING' ? 'DECLARING' : 'BIDDING' };
   }
-  const finished: FinishedBoard = {
+  let finished: FinishedBoard = {
     boardNumber: board.boardNumber,
     dealer: board.dealer,
     vulnerability: board.vulnerability,
     result: board.result,
   };
+  let rubber = state.rubber;
+  if (state.mode === 'RUBBER' && rubber) {
+    const res = board.result;
+    rubber = applyRubberDeal(
+      rubber,
+      board.boardNumber,
+      res.kind === 'PLAYED' ? { contract: res.contract, declarerTricks: res.declarerTricks, deal: board.deal } : null,
+    );
+    const dealScore = rubber.entries[rubber.entries.length - 1]?.score;
+    if (dealScore && res.kind === 'PLAYED') {
+      const ns = rubberDealNsDelta(dealScore) + (rubber.winner ? (rubber.winner === 'NS' ? rubber.rubberBonus : -rubber.rubberBonus) : 0);
+      finished = { ...finished, rubber: dealScore, result: { ...res, nsScore: ns, ewScore: -ns } };
+    }
+  }
   const completedBoards = [...state.completedBoards, finished];
+  const matchOver = state.mode === 'RUBBER' ? rubber?.winner != null : completedBoards.length >= state.targetBoards;
   const at = deps.now();
   const writes: PendingWrite[] = [];
   if (state.matchId) {
     writes.push({ kind: 'BOARD_RESULT', id: `${state.matchId}:board:${board.boardNumber}`, matchId: state.matchId, board: finished, at });
-    if (completedBoards.length >= state.targetBoards) {
+    if (matchOver) {
       writes.push({ kind: 'MATCH_END', id: `${state.matchId}:end`, matchId: state.matchId, roomId: state.roomId, at });
     }
   }
@@ -238,13 +263,21 @@ const afterBoardChange = (state: RoomState, board: BoardState, deps: RoomDeps): 
     board,
     phase: 'BOARD_RESULT',
     completedBoards,
+    rubber,
     nextBoardReady: allFalse(),
     pendingWrites: [...state.pendingWrites, ...writes],
   };
 };
 
-const newBoard = (state: RoomState, n: number, deps: RoomDeps): BoardState =>
-  state.mode === 'MINI' ? createMiniBoard(n, deps.rng) : createBoard(n, deps.rng);
+const newBoard = (state: RoomState, n: number, deps: RoomDeps): BoardState => {
+  if (state.mode === 'MINI') return createMiniBoard(n, deps.rng);
+  const board = createBoard(n, deps.rng);
+  // Rubber: dealer still rotates by deal number; vulnerability comes from games won.
+  return state.mode === 'RUBBER' && state.rubber ? { ...board, vulnerability: rubberVulnerability(state.rubber) } : board;
+};
+
+const isMatchOver = (state: RoomState): boolean =>
+  state.mode === 'RUBBER' ? state.rubber?.winner != null : state.completedBoards.length >= state.targetBoards;
 
 export interface RoomDeps {
   readonly rng: RandomSource;
@@ -419,7 +452,7 @@ const transition = (state: RoomState, userId: string, cmd: MutatingCommand, deps
       if (!actingSeat(state, userId)) return err('FORBIDDEN', 'A bot is playing your seat; take it back first.');
       const nextBoardReady = { ...state.nextBoardReady, [seat]: cmd.payload.ready };
       if (!SEATS.every((s) => nextBoardReady[s])) return step({ ...state, nextBoardReady });
-      if (state.completedBoards.length >= state.targetBoards) {
+      if (isMatchOver(state)) {
         return step({ ...state, nextBoardReady, phase: 'MATCH_COMPLETED' });
       }
       const board = newBoard(state, state.board.boardNumber + 1, deps);

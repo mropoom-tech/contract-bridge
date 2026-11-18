@@ -63,6 +63,7 @@ export const projectRoomForUser = (
     version: state.version,
     targetBoards: state.targetBoards,
     mode: state.mode,
+    rubber: state.rubber,
     mini: view?.mini ? { hcp: view.mini.hcp, declarer: view.mini.declarer } : null,
     seats,
     lobby,
