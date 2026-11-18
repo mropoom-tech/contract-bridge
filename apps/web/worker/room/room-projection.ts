@@ -2,10 +2,12 @@
  * Seat-specific allowlisted projection of RoomState. This is the ONLY way room
  * data leaves the Durable Object; never serialize RoomState directly.
  */
-import { partnerOf, projectBoardForSeat, SEATS, type Seat } from '@bridge/game-engine';
+import { impsForDifference, partnerOf, projectBoardForSeat, SEATS, type Seat } from '@bridge/game-engine';
 import {
   payloadFromCall,
   type AllowedActions,
+  type DuplicateView,
+  type FinishedBoard,
   type LobbyMember,
   type PublicViewState,
   type SeatOccupant,
@@ -27,10 +29,30 @@ const NO_ACTIONS: AllowedActions = {
   miniChoices: [],
 };
 
+/**
+ * Compare boards finished at BOTH tables only, so neither table learns the
+ * other table's result on a board it has not finished yet.
+ */
+export const duplicateView = (state: RoomState, partnerBoards: readonly FinishedBoard[] | null): DuplicateView | null => {
+  const d = state.duplicate;
+  if (!d) return null;
+  const other = partnerBoards ?? [];
+  const comparisons = state.completedBoards.flatMap((mine) => {
+    const theirs = other.find((b) => b.boardNumber === mine.boardNumber);
+    if (!theirs) return [];
+    const [t1, t2] = d.table === 1 ? [mine.result.nsScore, theirs.result.nsScore] : [theirs.result.nsScore, mine.result.nsScore];
+    return [{ boardNumber: mine.boardNumber, table1Ns: t1, table2Ns: t2, impsTeamA: impsForDifference(t1 - t2) }];
+  });
+  const a = comparisons.reduce((s, c) => s + Math.max(0, c.impsTeamA), 0);
+  const b = comparisons.reduce((s, c) => s + Math.max(0, -c.impsTeamA), 0);
+  return { table: d.table, otherTableCode: d.partnerCode, comparisons, impsTeamA: a, impsTeamB: b, otherTableFinished: other.length };
+};
+
 export const projectRoomForUser = (
   state: RoomState,
   userId: string,
   online: ReadonlySet<string>,
+  partnerBoards: readonly FinishedBoard[] | null = null,
 ): SeatSpecificSnapshot => {
   const member = state.members.find((m) => m.userId === userId);
   const seat: Seat | null = member ? seatOf(state, userId) : null;
@@ -64,6 +86,7 @@ export const projectRoomForUser = (
     targetBoards: state.targetBoards,
     mode: state.mode,
     rubber: state.rubber,
+    duplicate: member ? duplicateView(state, partnerBoards) : null,
     mini: view?.mini ? { hcp: view.mini.hcp, declarer: view.mini.declarer } : null,
     seats,
     lobby,

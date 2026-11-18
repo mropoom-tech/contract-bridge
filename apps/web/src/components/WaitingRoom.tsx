@@ -5,6 +5,7 @@ import { t } from '../i18n/th';
 import { useRoom } from '../stores/room';
 import { Button, Panel } from './ui';
 import { VotePanel } from './VotePanel';
+import { OtherTableLink } from './DuplicatePanel';
 
 const teamClasses = (seat: Seat) =>
   partnershipOf(seat) === 'NS' ? 'border-ns-400/60 bg-ns-600/25' : 'border-ew-400/60 bg-ew-600/25';
@@ -113,6 +114,16 @@ export const WaitingRoom = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) =>
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-bold">{t.waitingRoom}</h1>
       <RoomCodeCard code={pub.roomCode} />
+      {pub.duplicate && (
+        <Panel className="space-y-2 border-gold-400/40">
+          <p className="font-semibold">
+            {t.dup.title} · {t.dup.thisTable(pub.duplicate.table)}
+          </p>
+          <p className="text-xs text-ivory-200/75">{t.dup.teams}</p>
+          <OtherTableLink dup={pub.duplicate} />
+          <p className="text-xs text-ivory-200/60">{t.dup.invite}</p>
+        </Panel>
+      )}
       <VotePanel snapshot={snapshot} />
 
       <ol className="grid grid-cols-3 gap-2 text-xs sm:text-sm" aria-label={t.progress}>
@@ -153,6 +164,7 @@ export const WaitingRoom = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) =>
             <div>
               <div className="text-2xl" aria-hidden="true">♠♥♦♣</div>
               <div className="text-xs text-ivory-200/80">{pub.mode === 'RUBBER' ? t.mode.oneRubber : t.boardsInMatch(pub.targetBoards)}</div>
+              {pub.duplicate && <div className="text-[11px] text-ivory-200/80">{t.dup.thisTable(pub.duplicate.table)}</div>}
               <div className="mt-1 rounded-full bg-black/30 px-2 text-[11px] font-semibold text-gold-300">{t.mode[pub.mode]}</div>
             </div>
           </div>

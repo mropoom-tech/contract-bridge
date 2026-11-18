@@ -33,8 +33,8 @@ export const api = {
   me: () => request<MeResponse>('/auth/me'),
   guest: (displayName: string) => request<MeResponse>('/auth/guest', { method: 'POST', body: { displayName } }),
   logout: () => request<{ ok: true }>('/auth/logout', { method: 'POST' }),
-  createRoom: (targetBoards: number, mode: 'CLASSIC' | 'MINI' | 'RUBBER' = 'CLASSIC') =>
-    request<{ code: string }>('/rooms', { method: 'POST', body: { targetBoards, mode } }),
+  createRoom: (targetBoards: number, mode: 'CLASSIC' | 'MINI' | 'RUBBER' | 'DUPLICATE' = 'CLASSIC') =>
+    request<{ code: string; otherTableCode?: string }>('/rooms', { method: 'POST', body: { targetBoards, mode } }),
   room: (code: string) => request<RoomSummary>(`/rooms/${encodeURIComponent(code)}`),
   join: (code: string) => request<{ ok: true; code: string }>(`/rooms/${encodeURIComponent(code)}/join`, { method: 'POST' }),
 };

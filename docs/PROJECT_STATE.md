@@ -267,3 +267,23 @@ Owner: create the GitHub repo and Cloudflare D1 database (see DEPLOYMENT.md §9a
   - The result dialog shows the deal's rubber breakdown and a rules summary instead of the duplicate breakdown.
 - Browser (local 5174, 1 human + 3 dev bots): three deals scored correctly on the sheet (1NT −3 → EW 150 above; 1NT +2 → NS 40 below + 60 above; EW 200 penalty; totals 100 / 350; "NS needs 60").
 - Checks: typecheck/lint clean. Unit web 66, engine 105 (branches 92.43%), shared 5. e2e 10/10. Build OK.
+
+## Duplicate team match, 2 linked tables (2026-11-18)
+
+- Engine `imps.ts`: WBF IMP scale (`impsForDifference`, `IMP_TABLE`); `test/imps.test.ts` (20 tests).
+- `POST /rooms {mode: 'DUPLICATE'}` creates two linked tables (counts as 2 toward the open-room cap) and returns `{code, otherTableCode}`.
+  - All boards are dealt once in the Worker with the CSPRNG (`createCryptoRandom`), then given privately to both DOs (`RoomState.duplicate.deals`). The deals are never projected to clients.
+  - Table 2 has no member at creation; its first joiner becomes host.
+- Room schema v6 adds `duplicate: {eventId, table, partnerRoomId, partnerCode, deals} | null`.
+- DO-to-DO RPC: `duplicateBoards()` returns that table's finished boards; `partnerChanged()` is called when the other table finishes a board. Partner results are cached in memory and refreshed on connect.
+- Projection `public.duplicate` compares only boards finished at BOTH tables, so a table never sees the other table's result on a board it hasn't finished. It shows IMPs for team A (NS at table 1 + EW at table 2) and B, and the other table's finished count.
+- UI:
+  - Lobby: Duplicate (2 tables) option.
+  - Waiting room: team explanation, other table code + copy link, table number on the felt.
+  - Table: IMP panel with team totals, your team highlighted, per-board NS T1 / NS T2 / IMPs.
+- Evidence:
+  - Unit `duplicate-room.test.ts` (4 tests): table-2 host, identical deals despite different room RNGs, no deals or other hands in a snapshot, comparison timing and IMP orientation from both tables.
+  - e2e `duplicate.e2e.test.ts` with 8 real WS clients: identical hands per seat at both tables; no comparison after only table 1 finished; both tables see `{board 1, 0, 0, 0 IMPs}` after both finish.
+  - Full e2e 11/11. Unit web 70, engine 125 (branches 92.09%), shared 5. typecheck/lint clean. Build OK.
+  - Browser screenshot of the duplicate waiting room.
+- Limits: 2 tables / 1 team match only (no multi-team movements or matchpoint pairs). Board results are compared in memory via the DOs, with no D1 event table yet.

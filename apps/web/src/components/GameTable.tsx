@@ -11,6 +11,7 @@ import { ResultPanel } from './ResultPanel';
 import { VotePanel } from './VotePanel';
 import { MiniPanel } from './MiniPanel';
 import { RubberSheet } from './RubberSheet';
+import { DuplicatePanel } from './DuplicatePanel';
 import { Button, Panel } from './ui';
 
 const teamText = (s: Seat) => (partnershipOf(s) === 'NS' ? 'text-ns-400' : 'text-ew-400');
@@ -263,6 +264,11 @@ export const GameTable = ({ snapshot }: { snapshot: SeatSpecificSnapshot }) => {
       <aside className="space-y-4">
         <VotePanel snapshot={snapshot} />
         {pub.mode === 'MINI' && <MiniPanel snapshot={snapshot} />}
+        {pub.duplicate && (
+          <Panel title={`${t.dup.title} · ${t.dup.thisTable(pub.duplicate.table)}`}>
+            <DuplicatePanel dup={pub.duplicate} mySeat={you.seat} />
+          </Panel>
+        )}
         {pub.rubber && !showResult && (
           <Panel title={t.rubber.title}>
             <RubberSheet rubber={pub.rubber} />

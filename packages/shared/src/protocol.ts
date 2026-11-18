@@ -112,7 +112,28 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 
 /** Room lifecycle phases visible to clients. */
 export type RoomPhase = 'WAITING' | 'BIDDING' | 'DECLARING' | 'PLAYING' | 'BOARD_RESULT' | 'MATCH_COMPLETED';
-export type GameModeName = 'CLASSIC' | 'MINI' | 'RUBBER';
+export type GameModeName = 'CLASSIC' | 'MINI' | 'RUBBER' | 'DUPLICATE';
+
+/** One board compared across the two tables of a duplicate team match. */
+export interface DuplicateComparison {
+  readonly boardNumber: number;
+  /** NS score at table 1 and at table 2. */
+  readonly table1Ns: number;
+  readonly table2Ns: number;
+  /** IMPs for team A (NS at table 1 + EW at table 2); negative = team B. */
+  readonly impsTeamA: number;
+}
+
+export interface DuplicateView {
+  readonly table: 1 | 2;
+  readonly otherTableCode: string;
+  /** Only boards finished at BOTH tables (no early result leaks). */
+  readonly comparisons: readonly DuplicateComparison[];
+  readonly impsTeamA: number;
+  readonly impsTeamB: number;
+  /** Boards the other table has finished so far (count only). */
+  readonly otherTableFinished: number;
+}
 
 export interface SeatOccupant {
   readonly displayName: string;
@@ -142,6 +163,8 @@ export interface PublicViewState {
   readonly version: number;
   readonly targetBoards: number;
   readonly mode: GameModeName;
+  /** Duplicate mode: linked-table comparison (null otherwise). */
+  readonly duplicate: DuplicateView | null;
   /** Rubber mode: the full score sheet (public information). */
   readonly rubber: RubberState | null;
   /** Mini Bridge: announced high-card points and declarer (null for classic). */

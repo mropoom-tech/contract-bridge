@@ -14,7 +14,7 @@ const errorText = (e: unknown) =>
 export const LobbyPage = () => {
   const user = useSession((st) => st.user);
   const [boards, setBoards] = useState<number>(4);
-  const [mode, setMode] = useState<'CLASSIC' | 'MINI' | 'RUBBER'>('CLASSIC');
+  const [mode, setMode] = useState<'CLASSIC' | 'MINI' | 'RUBBER' | 'DUPLICATE'>('CLASSIC');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState('');
@@ -75,8 +75,8 @@ export const LobbyPage = () => {
             </div>
             <fieldset>
               <legend className="mb-2 text-sm text-ivory-200">{t.mode.label}</legend>
-              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
-                {(['CLASSIC', 'MINI', 'RUBBER'] as const).map((m) => (
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
+                {(['CLASSIC', 'MINI', 'RUBBER', 'DUPLICATE'] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -119,7 +119,7 @@ export const LobbyPage = () => {
             )}
             <div className="flex flex-wrap gap-2 text-xs">
               {mode === 'CLASSIC' && <span className="rounded-full bg-black/30 px-3 py-1">{t.modeDuplicate}</span>}
-              <span className="rounded-full bg-black/30 px-3 py-1">{t.fourPlayers}</span>
+              <span className="rounded-full bg-black/30 px-3 py-1">{mode === 'DUPLICATE' ? '8 คน · 2 โต๊ะ' : t.fourPlayers}</span>
             </div>
             <Button variant="primary" className="mt-auto w-full text-lg" onClick={() => void create()} busy={creating} disabled={creating}>
               {t.createRoom}

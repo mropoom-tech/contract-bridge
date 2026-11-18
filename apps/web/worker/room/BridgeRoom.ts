@@ -5,6 +5,7 @@ import {
   MAX_FRAME_LENGTH,
   PROTOCOL_VERSION,
   type ErrorCode,
+  type FinishedBoard,
   type RoomSummary,
   type ServerMessage,
 } from '@bridge/shared';
@@ -51,6 +52,8 @@ export class BridgeRoom extends DurableObject<Env> {
   /** In-memory frame counters; reset on hibernation, which is acceptable. */
   private readonly rate = new WeakMap<WebSocket, { start: number; count: number }>();
   private flushing: Promise<void> | null = null;
+  /** Duplicate: the other table's finished boards (refreshed on demand, in memory only). */
+  private partnerBoards: readonly FinishedBoard[] | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -204,6 +207,45 @@ export class BridgeRoom extends DurableObject<Env> {
     return { ok: true };
   }
 
+  // ---------- Duplicate: linked table ----------
+
+  /** RPC for the linked table only: this table's finished boards (public results). */
+  async duplicateBoards(): Promise<readonly FinishedBoard[]> {
+    return this.room?.completedBoards ?? [];
+  }
+
+  /** RPC: the linked table finished a board; refresh and push new comparisons. */
+  async partnerChanged(): Promise<void> {
+    await this.refreshPartner();
+  }
+
+  private partnerStub() {
+    const d = this.room?.duplicate;
+    return d ? this.env.BRIDGE_ROOMS.get(this.env.BRIDGE_ROOMS.idFromName(d.partnerRoomId)) : null;
+  }
+
+  private async refreshPartner(): Promise<void> {
+    const stub = this.partnerStub();
+    if (!stub) return;
+    try {
+      this.partnerBoards = await stub.duplicateBoards();
+      this.broadcastSnapshots();
+    } catch (e) {
+      console.error('duplicate_refresh_failed', { roomId: this.room?.roomId, name: (e as Error).name });
+    }
+  }
+
+  private async afterOwnBoardFinished(): Promise<void> {
+    const stub = this.partnerStub();
+    if (!stub) return;
+    try {
+      await stub.partnerChanged();
+    } catch (e) {
+      console.error('duplicate_notify_failed', { roomId: this.room?.roomId, name: (e as Error).name });
+    }
+    await this.refreshPartner();
+  }
+
   // ---------- WebSocket ----------
 
   override async fetch(request: Request): Promise<Response> {
@@ -238,6 +280,7 @@ export class BridgeRoom extends DurableObject<Env> {
     this.sendSnapshot(server, userId, online);
     this.broadcastSnapshots(server);
     void this.driveBots(); // resume bots after hibernation/eviction
+    if (this.room.duplicate && this.partnerBoards === null) void this.refreshPartner();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -299,6 +342,7 @@ export class BridgeRoom extends DurableObject<Env> {
     );
     if (outcome.broadcast) this.broadcastSnapshots();
     if (outcome.state.pendingWrites.length > room.pendingWrites.length) void this.flushOutbox();
+    if (outcome.state.completedBoards.length > room.completedBoards.length) void this.afterOwnBoardFinished();
     if (cmd.type === 'room:leave' && res.status === 'accepted') {
       for (const s of this.ctx.getWebSockets(userId)) s.close(CLOSE_REMOVED, 'Left the room');
     }
@@ -371,6 +415,7 @@ export class BridgeRoom extends DurableObject<Env> {
       await this.save(next);
       this.broadcastSnapshots();
       if (next.pendingWrites.length > room.pendingWrites.length) void this.flushOutbox();
+      if (next.completedBoards.length > room.completedBoards.length) void this.afterOwnBoardFinished();
     } catch (e) {
       console.error('bot_step_failed', { roomId: room.roomId, name: (e as Error).name });
     }
@@ -429,7 +474,7 @@ export class BridgeRoom extends DurableObject<Env> {
       protocolVersion: PROTOCOL_VERSION,
       type: 'session:snapshot',
       stateVersion: room.version,
-      snapshot: projectRoomForUser(room, userId, online),
+      snapshot: projectRoomForUser(room, userId, online, this.partnerBoards),
     });
   }
 

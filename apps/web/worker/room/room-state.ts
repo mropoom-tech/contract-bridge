@@ -7,6 +7,7 @@ import {
   boardDeclareMini,
   boardPlay,
   createBoard,
+  createBoardWithDeal,
   createMiniBoard,
   createRubber,
   applyRubberDeal,
@@ -22,6 +23,7 @@ import {
   type BoardState,
   type Card,
   type EngineErrorCode,
+  type Hands,
   type Strain,
   type RandomSource,
   type Seat,
@@ -37,7 +39,7 @@ import {
 } from '@bridge/shared';
 import { chooseCard } from './bot';
 
-export const ROOM_SCHEMA_VERSION = 5;
+export const ROOM_SCHEMA_VERSION = 6;
 export const MAX_MEMBERS = 4;
 export const MAX_PROCESSED_REQUESTS = 256;
 
@@ -70,6 +72,8 @@ export interface RoomState {
   readonly mode: GameModeName;
   /** Rubber mode score sheet; null for other modes. */
   readonly rubber: RubberState | null;
+  /** Duplicate team match: link to the other table and the shared deals (SECRET — never projected). */
+  readonly duplicate: DuplicateLink | null;
   readonly createdAt: string;
   readonly phase: RoomPhase;
   /** Monotonic; +1 per committed logical mutation. */
@@ -118,11 +122,22 @@ export type PendingWrite =
   | { readonly kind: 'BOARD_RESULT'; readonly id: string; readonly matchId: string; readonly board: FinishedBoard; readonly at: string }
   | { readonly kind: 'MATCH_END'; readonly id: string; readonly matchId: string; readonly roomId: string; readonly at: string };
 
+export interface DuplicateLink {
+  readonly eventId: string;
+  readonly table: 1 | 2;
+  readonly partnerRoomId: string;
+  readonly partnerCode: string;
+  /** Pre-dealt boards shared by both tables, dealt with the CSPRNG at creation. */
+  readonly deals: readonly Hands[];
+}
+
 export interface RoomInit {
   readonly roomId: string;
   readonly code: string;
-  readonly host: Member;
+  /** null: nobody joins automatically; the first member to join becomes host (table 2). */
+  readonly host: Member | null;
   readonly targetBoards: number;
+  readonly duplicate?: DuplicateLink;
   readonly mode?: GameModeName;
   readonly createdAt: string;
 }
@@ -135,14 +150,15 @@ export const createRoomState = (init: RoomInit): RoomState => ({
   schemaVersion: ROOM_SCHEMA_VERSION,
   roomId: init.roomId,
   code: init.code,
-  hostUserId: init.host.userId,
+  hostUserId: init.host?.userId ?? '',
   targetBoards: init.targetBoards,
   mode: init.mode ?? 'CLASSIC',
   rubber: init.mode === 'RUBBER' ? createRubber() : null,
+  duplicate: init.duplicate ?? null,
   createdAt: init.createdAt,
   phase: 'WAITING',
   version: 1,
-  members: [init.host],
+  members: init.host ? [init.host] : [],
   seats: { N: null, E: null, S: null, W: null },
   matchId: null,
   board: null,
@@ -165,7 +181,9 @@ export const acknowledgeWrites = (state: RoomState, ids: ReadonlySet<string>): R
 export const migrateRoomState = (raw: unknown): RoomState => {
   const s = raw as Partial<RoomState> & { schemaVersion?: number };
   if (s.schemaVersion === ROOM_SCHEMA_VERSION) return s as RoomState;
-  const v5 = { rubber: null };
+  const v6 = { duplicate: null };
+  const v5 = { rubber: null, ...v6 };
+  if (s.schemaVersion === 5) return { ...(s as RoomState), ...v6, schemaVersion: ROOM_SCHEMA_VERSION };
   const v4 = { mode: 'CLASSIC' as const, ...v5 };
   const v3 = { botSeats: allFalse(), kicked: [], vote: null, ...v4 };
   if (s.schemaVersion === 4) return { ...(s as RoomState), ...v5, schemaVersion: ROOM_SCHEMA_VERSION };
@@ -205,7 +223,12 @@ export const joinRoom = (
   return {
     ok: true,
     changed: true,
-    state: { ...state, members: [...state.members, member], version: state.version + 1 },
+    state: {
+      ...state,
+      members: [...state.members, member],
+      hostUserId: state.hostUserId === '' ? member.userId : state.hostUserId,
+      version: state.version + 1,
+    },
   };
 };
 
@@ -271,6 +294,11 @@ const afterBoardChange = (state: RoomState, board: BoardState, deps: RoomDeps): 
 
 const newBoard = (state: RoomState, n: number, deps: RoomDeps): BoardState => {
   if (state.mode === 'MINI') return createMiniBoard(n, deps.rng);
+  if (state.mode === 'DUPLICATE' && state.duplicate) {
+    const deal = state.duplicate.deals[n - 1];
+    if (!deal) throw new Error(`No shared deal for board ${n}`);
+    return createBoardWithDeal(n, deal);
+  }
   const board = createBoard(n, deps.rng);
   // Rubber: dealer still rotates by deal number; vulnerability comes from games won.
   return state.mode === 'RUBBER' && state.rubber ? { ...board, vulnerability: rubberVulnerability(state.rubber) } : board;

@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
+import { createCryptoRandom, deal } from '@bridge/game-engine';
 import {
   CreateRoomRequestSchema,
   GuestLoginRequestSchema,
@@ -152,27 +153,63 @@ export const createApp = () => {
     )
       .bind(user.id, since)
       .first<{ n: number }>();
-    if ((open?.n ?? 0) >= MAX_OPEN_ROOMS_PER_HOST) {
+    const needed = body.mode === 'DUPLICATE' ? 2 : 1;
+    if ((open?.n ?? 0) + needed > MAX_OPEN_ROOMS_PER_HOST) {
       return apiError(c, 'RATE_LIMITED', 'Too many open rooms; finish or reuse an existing room.');
     }
-    const roomId = crypto.randomUUID();
     const now = new Date().toISOString();
-    let code: string | null = null;
-    for (let attempt = 0; attempt < 5 && code === null; attempt++) {
-      const candidate = generateRoomCode();
-      const res = await c.env.DB.prepare(
-        `INSERT INTO rooms (id, code, host_user_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, 'waiting', ?, ?) ON CONFLICT(code) DO NOTHING`,
-      )
-        .bind(roomId, candidate, user.id, now, now)
-        .run();
-      if (res.meta.changes === 1) code = candidate;
+    const allocate = async (roomId: string): Promise<string | null> => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = generateRoomCode();
+        const res = await c.env.DB.prepare(
+          `INSERT INTO rooms (id, code, host_user_id, status, created_at, updated_at)
+           VALUES (?, ?, ?, 'waiting', ?, ?) ON CONFLICT(code) DO NOTHING`,
+        )
+          .bind(roomId, candidate, user.id, now, now)
+          .run();
+        if (res.meta.changes === 1) return candidate;
+      }
+      return null;
+    };
+    const host = { userId: user.id, displayName: user.displayName };
+
+    if (body.mode === 'DUPLICATE') {
+      // Two linked tables play the SAME deals, dealt here once with the CSPRNG.
+      const rng = createCryptoRandom(crypto);
+      const deals = Array.from({ length: body.targetBoards }, () => deal(rng));
+      const [id1, id2] = [crypto.randomUUID(), crypto.randomUUID()];
+      const code1 = await allocate(id1);
+      const code2 = code1 ? await allocate(id2) : null;
+      if (!code1 || !code2) return apiError(c, 'INTERNAL_ERROR', 'Could not allocate a room code.');
+      const eventId = crypto.randomUUID();
+      await roomStub(c.env, id1).initialize({
+        roomId: id1,
+        code: code1,
+        host,
+        targetBoards: body.targetBoards,
+        mode: 'DUPLICATE',
+        createdAt: now,
+        duplicate: { eventId, table: 1, partnerRoomId: id2, partnerCode: code2, deals },
+      });
+      await roomStub(c.env, id2).initialize({
+        roomId: id2,
+        code: code2,
+        host: null,
+        targetBoards: body.targetBoards,
+        mode: 'DUPLICATE',
+        createdAt: now,
+        duplicate: { eventId, table: 2, partnerRoomId: id1, partnerCode: code1, deals },
+      });
+      return c.json({ code: code1, otherTableCode: code2 }, 201);
     }
+
+    const roomId = crypto.randomUUID();
+    const code = await allocate(roomId);
     if (code === null) return apiError(c, 'INTERNAL_ERROR', 'Could not allocate a room code.');
     await roomStub(c.env, roomId).initialize({
       roomId,
       code,
-      host: { userId: user.id, displayName: user.displayName },
+      host,
       targetBoards: body.targetBoards,
       mode: body.mode,
       createdAt: now,
